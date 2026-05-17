@@ -143,3 +143,28 @@ class DatabaseManager:
     def save_trade(self, timestamp, ticker, decision, quantity, price, confidence):
         query = "INSERT INTO trades (timestamp, ticker, decision, quantity, price, confidence) VALUES (?, ?, ?, ?, ?, ?)"
         self.execute_query(query, (timestamp, ticker, decision, quantity, price, confidence))
+
+    def get_pending_evaluations(self):
+        # Get predictions that haven't been evaluated yet
+        query = """
+            SELECT p.id, p.timestamp, p.ticker, p.prediction, p.confidence 
+            FROM predictions p
+            LEFT JOIN evaluation_logs e ON p.id = e.prediction_id
+            WHERE e.id IS NULL
+        """
+        results = self.execute_query(query)
+        return [{"id": r[0], "timestamp": r[1], "ticker": r[2], "prediction": r[3], "confidence": r[4]} for r in results]
+
+    def save_evaluation(self, prediction_id, actual_result, evaluation, success, timestamp):
+        query = "INSERT INTO evaluation_logs (timestamp, prediction_id, actual_result, evaluation, success) VALUES (?, ?, ?, ?, ?)"
+        self.execute_query(query, (timestamp, prediction_id, actual_result, evaluation, success))
+
+    def get_evaluation_summaries(self):
+        query = """
+            SELECT e.timestamp, p.ticker, p.prediction, e.actual_result, e.evaluation, e.success
+            FROM evaluation_logs e
+            JOIN predictions p ON e.prediction_id = p.id
+            ORDER BY e.timestamp DESC
+        """
+        results = self.execute_query(query)
+        return [{"timestamp": r[0], "ticker": r[1], "prediction": r[2], "result": r[3], "evaluation": r[4], "success": r[5]} for r in results]

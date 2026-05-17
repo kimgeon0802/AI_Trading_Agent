@@ -6,6 +6,8 @@ from datetime import datetime
 from agents.gpt_agent.agent import GPTAgent
 from runtime.tool_manager.db_manager import DatabaseManager
 from runtime.tool_manager.portfolio_manager import PortfolioManager
+from runtime.tool_manager.evaluation_manager import EvaluationManager
+from runtime.tool_manager.market_simulator import MarketSimulator
 
 # Configure logging
 logging.basicConfig(
@@ -22,30 +24,47 @@ class RuntimeExecutor:
     def __init__(self):
         self.db = DatabaseManager()
         self.portfolio_manager = PortfolioManager(self.db)
+        self.evaluation_manager = EvaluationManager(self.db)
+        self.market_simulator = MarketSimulator()
         self.agent = GPTAgent()
         
         # Initialize portfolio if needed
         self.portfolio_manager.ensure_initial_portfolio()
 
-    async def run_cycle(self):
+    async def run_cycle(self, market_condition=None):
         logger.info("Starting new trading cycle...")
+        
+        # 0. Simulate Market Movement
+        if market_condition:
+            self.market_simulator.set_condition(market_condition)
+        self.market_simulator.simulate_step()
         
         # Target ticker for this cycle
         target_ticker = "005930" # 삼성전자
-        current_price = 78500.0  # Mock current price
+        current_price = self.market_simulator.get_price(target_ticker)
         
         # 1. Collect Data (Simulated for Phase 1)
         market_data = self._collect_mock_data(target_ticker, current_price)
         
         # 2. Get Decision from AI
-        logger.info(f"Requesting decision from AI agent for {target_ticker}...")
+        logger.info(f"Requesting decision from AI agent for {target_ticker} at price {current_price}...")
         decision_result = self.agent.make_decision(market_data)
         
         if decision_result:
             timestamp = datetime.now().isoformat()
             logger.info(f"AI Decision for {target_ticker}: {decision_result['decision']} (Confidence: {decision_result['confidence']})")
             
-            # 3. Save Reasoning and Prediction
+            # Save prediction to DB
+            self.db.save_prediction(
+                target_ticker,
+                decision_result['decision'],
+                0.0,
+                decision_result['confidence'],
+                str(decision_result['reasoning']),
+                timestamp
+            )
+            
+            # 3. Save Reasoning
             self.db.save_reasoning(
                 decision_result['decision'],
                 decision_result['reasoning'],
@@ -54,13 +73,13 @@ class RuntimeExecutor:
                 timestamp
             )
             
-            # Save prediction log as file
-            log_filename = f"logs/predictions/prediction_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            with open(log_filename, "w", encoding="utf-8") as f:
-                json.dump(decision_result, f, indent=2, ensure_ascii=False)
-            
             # 4. Update Virtual Portfolio
             self.portfolio_manager.execute_decision(target_ticker, decision_result, current_price)
+            
+            # 5. Run Evaluation for pending predictions
+            # In Phase 1 MVP, we evaluate against the current price just generated
+            evaluation_market_data = self.market_simulator.get_all_prices()
+            self.evaluation_manager.run_evaluation(evaluation_market_data)
             
         else:
             logger.error("Failed to get valid decision from AI.")
