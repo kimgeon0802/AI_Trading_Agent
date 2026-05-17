@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from agents.gpt_agent.agent import GPTAgent
 from runtime.tool_manager.db_manager import DatabaseManager
+from runtime.tool_manager.portfolio_manager import PortfolioManager
 
 # Configure logging
 logging.basicConfig(
@@ -20,26 +21,29 @@ logger = logging.getLogger("RuntimeExecutor")
 class RuntimeExecutor:
     def __init__(self):
         self.db = DatabaseManager()
+        self.portfolio_manager = PortfolioManager(self.db)
         self.agent = GPTAgent()
-        self.portfolio_data = {
-            "cash": 10000000,  # 10,000,000 KRW
-            "total_asset": 10000000,
-            "holdings": []
-        }
+        
+        # Initialize portfolio if needed
+        self.portfolio_manager.ensure_initial_portfolio()
 
     async def run_cycle(self):
         logger.info("Starting new trading cycle...")
         
+        # Target ticker for this cycle
+        target_ticker = "005930" # 삼성전자
+        current_price = 78500.0  # Mock current price
+        
         # 1. Collect Data (Simulated for Phase 1)
-        market_data = self._collect_mock_data()
+        market_data = self._collect_mock_data(target_ticker, current_price)
         
         # 2. Get Decision from AI
-        logger.info("Requesting decision from AI agent...")
+        logger.info(f"Requesting decision from AI agent for {target_ticker}...")
         decision_result = self.agent.make_decision(market_data)
         
         if decision_result:
             timestamp = datetime.now().isoformat()
-            logger.info(f"AI Decision: {decision_result['decision']} (Confidence: {decision_result['confidence']})")
+            logger.info(f"AI Decision for {target_ticker}: {decision_result['decision']} (Confidence: {decision_result['confidence']})")
             
             # 3. Save Reasoning and Prediction
             self.db.save_reasoning(
@@ -55,14 +59,14 @@ class RuntimeExecutor:
             with open(log_filename, "w", encoding="utf-8") as f:
                 json.dump(decision_result, f, indent=2, ensure_ascii=False)
             
-            # 4. Update Virtual Portfolio (Placeholder for Phase 1)
-            self._update_portfolio(decision_result)
+            # 4. Update Virtual Portfolio
+            self.portfolio_manager.execute_decision(target_ticker, decision_result, current_price)
             
         else:
             logger.error("Failed to get valid decision from AI.")
 
-    def _collect_mock_data(self):
-        # This will be replaced by actual data collectors in later phases
+    def _collect_mock_data(self, ticker, price):
+        portfolio_state = self.portfolio_manager.get_current_state()
         return {
             "timestamp": datetime.now().isoformat(),
             "market_summary": {
@@ -74,7 +78,7 @@ class RuntimeExecutor:
                 "interest_rate": 3.5,
                 "cpi": 3.1
             },
-            "portfolio": self.portfolio_data,
+            "portfolio": portfolio_state,
             "news": [
                 {
                     "title": "삼성전자 1분기 영업이익 예상 상회",
@@ -84,18 +88,13 @@ class RuntimeExecutor:
                 }
             ],
             "technical_indicators": {
-                "005930": {
+                ticker: {
                     "rsi": 55,
-                    "macd": 0.5
+                    "macd": 0.5,
+                    "price": price
                 }
             }
         }
-
-    def _update_portfolio(self, decision):
-        # Simple virtual portfolio update logic
-        # In Phase 1, we just log that we are "performing" the action
-        logger.info(f"Updating virtual portfolio based on decision: {decision['decision']}")
-        # Actual logic to update DB and self.portfolio_data would go here
 
 async def main():
     executor = RuntimeExecutor()

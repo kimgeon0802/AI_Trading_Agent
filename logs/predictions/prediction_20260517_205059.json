@@ -1,0 +1,12 @@
+{
+  "decision": "BUY",
+  "confidence": 0.43,
+  "reasoning": [
+    "Mock 분석: BUY 결정됨",
+    "기술적 지표 및 뉴스 데이터의 가상 분석 결과"
+  ],
+  "risks": [
+    "Mock 시스템에 의한 가상 리스크 요소"
+  ],
+  "expected_result": "테스트 환경에서의 가상 예측 결과"
+}
