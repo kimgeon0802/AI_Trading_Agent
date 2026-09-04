@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 from datetime import datetime
 from agents.gpt_agent.agent import GPTAgent
 from runtime.tool_manager.db_manager import DatabaseManager
@@ -9,6 +10,8 @@ from runtime.tool_manager.portfolio_manager import PortfolioManager
 from runtime.tool_manager.evaluation_manager import EvaluationManager
 from runtime.tool_manager.market_simulator import MarketSimulator
 from runtime.tool_manager.sentiment_analyzer import SentimentAnalyzer
+from runtime.tool_manager.macro_manager import MacroManager
+from runtime.tool_manager.risk_manager import RiskManager
 
 # Configure logging
 logging.basicConfig(
@@ -28,6 +31,8 @@ class RuntimeExecutor:
         self.evaluation_manager = EvaluationManager(self.db)
         self.market_simulator = MarketSimulator()
         self.sentiment_analyzer = SentimentAnalyzer()
+        self.macro_manager = MacroManager(self.db)
+        self.risk_manager = RiskManager(self.db)
         self.agent = GPTAgent()
         
         # Initialize portfolio if needed
@@ -89,6 +94,10 @@ class RuntimeExecutor:
     def _collect_data(self, ticker, price):
         portfolio_state = self.portfolio_manager.get_current_state()
         
+        # Fetch actual macro data
+        self.macro_manager.fetch_and_save_macro_data()
+        macro_data = self.macro_manager.get_current_macro_indicators()
+        
         # Simulate News
         news_data = [
             {
@@ -109,16 +118,7 @@ class RuntimeExecutor:
         sentiment_result = self.sentiment_analyzer.analyze_news_list(news_data)
         
         # Phase 2: Risk Assessment
-        risk_report = self.risk_manager.get_risk_report(ticker, price)
-        
-        import random
-        # Phase 2: More realistic Macro Data (Simulated)
-        macro_data = {
-            "interest_rate": 3.5,
-            "exchange_rate_usdkrw": round(random.uniform(1320, 1380), 1),
-            "cpi": 3.1,
-            "fear_greed_index": random.randint(30, 70)
-        }
+        risk_report = self.risk_manager.get_risk_report(ticker, price, macro_data=macro_data)
         
         return {
             "timestamp": datetime.now().isoformat(),

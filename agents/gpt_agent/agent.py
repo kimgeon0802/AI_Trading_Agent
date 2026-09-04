@@ -22,7 +22,13 @@ class GPTAgent:
         - technical_indicators
         """
         import json
-        user_prompt = f"{self.decision_prompt}\n\n# Market Data\n{json.dumps(market_data, indent=2, ensure_ascii=False)}"
+        
+        # Inject Macro Data
+        macro_data = market_data.get("macro_data", {})
+        macro_str = json.dumps(macro_data, indent=2, ensure_ascii=False) if macro_data else "No current macro data available."
+        user_prompt = self.decision_prompt.replace("{{MACRO_DATA}}", macro_str)
+        
+        user_prompt = f"{user_prompt}\n\n# Market Data\n{json.dumps(market_data, indent=2, ensure_ascii=False)}"
         
         response_text = self.client.get_completion(self.system_prompt, user_prompt)
         if response_text:
