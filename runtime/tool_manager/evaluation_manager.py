@@ -79,13 +79,39 @@ class EvaluationManager:
 
     def generate_reports(self):
         evaluations = self.db.get_evaluation_summaries()
+        portfolio_history = self.db.execute_query("SELECT total_asset FROM portfolio ORDER BY timestamp ASC")
         
+        # Calculate overall metrics
+        total_return = 0.0
+        max_drawdown = 0.0
+        if portfolio_history:
+            initial_asset = portfolio_history[0][0]
+            current_asset = portfolio_history[-1][0]
+            total_return = ((current_asset - initial_asset) / initial_asset) * 100
+            
+            # Max Drawdown calculation
+            peak = 0
+            for row in portfolio_history:
+                asset = row[0]
+                if asset > peak:
+                    peak = asset
+                dd = (peak - asset) / peak if peak > 0 else 0
+                if dd > max_drawdown:
+                    max_drawdown = dd
+            max_drawdown *= 100
+
         # Daily Report
         today = datetime.now().strftime("%Y-%m-%d")
         daily_report_path = os.path.join(self.reports_dir, f"daily_evaluation_report_{today}.md")
         
         with open(daily_report_path, "w", encoding="utf-8") as f:
             f.write(f"# Daily Evaluation Report - {today}\n\n")
+            
+            f.write("## Performance Metrics\n")
+            f.write(f"- **Total ROI:** {total_return:.2f}%\n")
+            f.write(f"- **Max Drawdown:** {max_drawdown:.2f}%\n\n")
+            
+            f.write("## Trade Evaluations\n")
             f.write("| Timestamp | Ticker | Decision | Actual Result | Success |\n")
             f.write("|-----------|--------|----------|---------------|---------|\n")
             
