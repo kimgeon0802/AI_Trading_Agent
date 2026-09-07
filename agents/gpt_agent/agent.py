@@ -2,6 +2,7 @@ import os
 from agents.base_agent import BaseTradingAgent
 from runtime.tool_manager.openai_client import OpenAIClient
 from runtime.tool_manager.parser import ResponseParser
+import json
 
 class GPTAgent(BaseTradingAgent):
     def __init__(self, system_prompt_path="prompts/system_prompt.md", decision_prompt_path="prompts/decision_prompt.md"):
@@ -22,16 +23,15 @@ class GPTAgent(BaseTradingAgent):
         - news
         - technical_indicators
         """
-        import json
         
         # Inject Macro Data
         macro_data = market_data.get("macro_data", {})
         macro_str = json.dumps(macro_data, indent=2, ensure_ascii=False) if macro_data else "No current macro data available."
         user_prompt = self.decision_prompt.replace("{{MACRO_DATA}}", macro_str)
-        
+
         user_prompt = f"{user_prompt}\n\n# Market Data\n{json.dumps(market_data, indent=2, ensure_ascii=False)}"
-        
-        response_text = self.client.get_completion(self.system_prompt, user_prompt)
-        if response_text:
+
+        status, response_text = self.client.get_completion(self.system_prompt, user_prompt)
+        if status.value == "SUCCESS" and response_text:
             return ResponseParser.parse_decision(response_text)
         return None

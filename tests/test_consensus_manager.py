@@ -3,33 +3,29 @@ from agents.multi_ai.consensus_manager import ConsensusManager
 
 class TestConsensusManager(unittest.TestCase):
     def setUp(self):
-        self.mock_buy = {"decision": "BUY", "confidence": 0.8, "reasoning": "R1", "risks": "Risk1", "expected_result": "E1"}
-        self.mock_sell = {"decision": "SELL", "confidence": 0.7, "reasoning": "R2", "risks": "Risk2", "expected_result": "E2"}
+        self.gpt_buy = {"decision": "BUY", "confidence": 0.8, "reasoning": "R1", "risks": "Risk1", "expected_result": "E1"}
+        self.claude_pass = {"evaluation": "PASS", "score": 90, "reasoning": "R", "issues": [], "risk_level": "LOW"}
+        self.claude_reject = {"evaluation": "REJECT", "score": 20, "reasoning": "R", "issues": ["High risk"], "risk_level": "HIGH"}
 
     def test_agreement(self):
-        results = {"gpt": self.mock_buy, "claude": self.mock_buy}
-        consensus = ConsensusManager.get_consensus(results)
+        consensus = ConsensusManager.get_consensus(self.gpt_buy, self.claude_pass)
         self.assertEqual(consensus["decision"], "BUY")
-        self.assertEqual(consensus["consensus_type"], "agreement")
+        self.assertEqual(consensus["method"], "validated_by_claude")
 
-    def test_disagreement_confidence_resolution(self):
-        # GPT(BUY, 0.8), Claude(SELL, 0.7) -> BUY (0.8 > 0.7)
-        results = {"gpt": self.mock_buy, "claude": self.mock_sell}
-        consensus = ConsensusManager.get_consensus(results)
-        self.assertEqual(consensus["decision"], "BUY")
-        self.assertEqual(consensus["consensus_type"], "confidence_resolution")
+    def test_rejection(self):
+        consensus = ConsensusManager.get_consensus(self.gpt_buy, self.claude_reject)
+        self.assertEqual(consensus["decision"], "HOLD")
+        self.assertEqual(consensus["method"], "risk_gate_rejection")
 
     def test_one_failure(self):
-        results = {"gpt": self.mock_buy, "claude": None}
-        consensus = ConsensusManager.get_consensus(results)
-        self.assertEqual(consensus["decision"], "BUY")
-        self.assertEqual(consensus["consensus_type"], "confidence_resolution")
+        consensus = ConsensusManager.get_consensus(self.gpt_buy, None)
+        self.assertEqual(consensus["decision"], "HOLD")
+        self.assertEqual(consensus["method"], "fallback_hold")
 
     def test_all_failures(self):
-        results = {"gpt": None, "claude": None}
-        consensus = ConsensusManager.get_consensus(results)
+        consensus = ConsensusManager.get_consensus(None, None)
         self.assertEqual(consensus["decision"], "HOLD")
-        self.assertEqual(consensus["consensus_type"], "fallback_hold")
+        self.assertEqual(consensus["method"], "fallback_hold")
 
 if __name__ == '__main__':
     unittest.main()

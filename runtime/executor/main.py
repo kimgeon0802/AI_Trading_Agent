@@ -87,7 +87,10 @@ class RuntimeExecutor:
                 logger.info(f"Consensus Method: {decision_result['consensus']['method']}")
                 for agent, res in decision_result["agent_results"].items():
                     if res:
-                        logger.info(f" -> {agent.upper()}: {res['decision']} (Confidence: {res['confidence']})")
+                        if agent == "gpt":
+                            logger.info(f" -> {agent.upper()}: {res['decision']} (Confidence: {res['confidence']})")
+                        else: # Claude
+                            logger.info(f" -> {agent.upper()}: {res['evaluation']} (Score: {res['score']})")
                     else:
                         logger.info(f" -> {agent.upper()}: Failed/None")
             else:

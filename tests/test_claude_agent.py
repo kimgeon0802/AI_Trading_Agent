@@ -14,19 +14,22 @@ class TestClaudeAgent(unittest.TestCase):
         self.assertIsInstance(self.agent, BaseTradingAgent)
 
     def test_make_decision_structure(self):
+        # Mock GPT result
+        gpt_result = {"decision": "BUY", "confidence": 0.8, "reasoning": "R1", "risks": "Risk1", "expected_result": "E1"}
+        
         # This will test the mock logic since USE_MOCK_CLAUDE is true by default
-        decision = self.agent.make_decision(self.sample_market_data)
+        decision = self.agent.make_decision(self.sample_market_data, gpt_result)
         
         # decision can be None if API fails/parse error, but in mock mode it should succeed
         if decision:
-            self.assertIn("decision", decision)
-            self.assertIn("confidence", decision)
+            self.assertIn("evaluation", decision)
+            self.assertIn("score", decision)
             self.assertIn("reasoning", decision)
-            self.assertIn("risks", decision)
-            self.assertIn("expected_result", decision)
+            self.assertIn("issues", decision)
+            self.assertIn("risk_level", decision)
             
-            self.assertIn(decision["decision"], ["BUY", "SELL", "HOLD"])
-            self.assertIsInstance(decision["confidence"], float)
+            self.assertIn(decision["evaluation"], ["PASS", "WARNING", "REJECT"])
+            self.assertIsInstance(decision["score"], (int, float))
 
 if __name__ == '__main__':
     unittest.main()
