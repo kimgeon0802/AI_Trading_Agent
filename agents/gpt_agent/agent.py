@@ -1,8 +1,9 @@
 import os
+from agents.base_agent import BaseTradingAgent
 from runtime.tool_manager.openai_client import OpenAIClient
 from runtime.tool_manager.parser import ResponseParser
 
-class GPTAgent:
+class GPTAgent(BaseTradingAgent):
     def __init__(self, system_prompt_path="prompts/system_prompt.md", decision_prompt_path="prompts/decision_prompt.md"):
         self.client = OpenAIClient()
         self.system_prompt = self._load_prompt(system_prompt_path)
