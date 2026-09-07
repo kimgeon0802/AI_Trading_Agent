@@ -31,37 +31,41 @@
 
 ---
 
-# Phase 3 — 멀티 AI 구조 [완료 - 2026-09-07]
+# 개발 로드맵
+
+# Phase 1 — MVP [완료 - 2024-09-04]
+(생략)
+
+---
+
+# Phase 2 — 분석 고도화 [완료 - 2026-09-04]
+(생략)
+
+---
+
+# Phase 3 — 멀티 AI 구조 및 추적성 확보 [완료 - 2026-09-07]
 
 목표:
-- GPT와 Claude의 독립적인 투자 분석
-- GPT/Claude 분석 결과의 Consensus 기반 최종 투자 판단
-- AI별 투자 판단 및 성과 분석 기반 마련
-- Gemini를 Development / Maintenance AI로 활용하는 구조 설계
+- Multi-AI (GPT + Claude) Consensus 구조 구현
+- `prediction_id` 기반 Traceability 확보
+- 상세 거래 보고서(Detailed Trading Report) 구현
+- AI Research Report 기반 마련
 
-진행사항 (2026-09-07):
-1. 기존 Gemini 투자 분석 Agent 구현 후 역할 재정의 완료.
-2. Gemini는 Trading Intelligence Layer에서 제외, Development / Maintenance Layer로 전환.
-3. 실제 투자 판단 AI는 GPT와 Claude로 구성 확정.
-4. ConsensusManager를 GPT/Claude 2개 AI 구조에 맞게 재설계 및 구현 완료.
-5. MultiAIOrchestrator 구현 및 RuntimeExecutor 연결 완료.
-6. Mock 기반 Multi-AI E2E 테스트 및 DB 저장 검증 완료.
-7. 기존 Phase 1/2 기능 및 테스트 정상 확인.
+진행사항:
+1. Multi-AI Consensus 구조 및 Orchestrator 구현 완료.
+2. `prediction_id` 기반의 `predictions` - `agent_decisions` - `reasoning_logs` - `trades` - `evaluation_logs` 데이터 연결 체계 확립.
+3. `cursor.lastrowid` 적용으로 ID 무결성 보장.
+4. `Detailed Trading Report` 구현 (포트폴리오 요약, 거래 내역, 자산 구성 시각화).
+5. 실제 API 연동 E2E 테스트 및 데이터 일치성 검증 완료.
 
-Consensus 설계:
-- GPT와 Claude의 decision이 일치하면 해당 decision을 우선한다.
-- decision이 다르면 confidence를 기준으로 더 높은 쪽을 선택한다.
-- 하나의 AI가 실패하면 정상 응답한 AI의 판단을 사용한다.
-- 모든 AI가 실패하면 안전한 HOLD 전략을 사용한다.
+---
 
-DB 설계:
-`agent_decisions` 테이블 (기존 테이블 유지, 추가 방식):
-- id, prediction_id, timestamp, model_name, decision, confidence, reasoning, risk_assessment
+# Phase 4 — 연구 보고서 고도화 [진행 중]
 
-구현 원칙:
-- 기존 Phase 1/2 테스트가 계속 통과하도록 regression 유지.
-- 대규모 리팩토링 금지, 계층 추가 방식의 구현.
+목표:
+- 실제 AI 판단 데이터를 기반으로 한 AI Research Report 자동 생성
+- GPT vs Claude 성과 비교 분석 체계 구축
 
-남은 작업:
-1. 실제 OpenAI/Anthropic API 연동
-2. Gemini를 활용한 Development / Maintenance 지원 기능 설계 (Phase 4 연계)
+진행할 내용:
+1. AI Research Report 데이터 쿼리 및 분석 로직 구현.
+2. 각 AI 판단 데이터와 실거래 ROI 상관관계 분석.
