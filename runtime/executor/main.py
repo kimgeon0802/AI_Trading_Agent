@@ -78,8 +78,8 @@ class RuntimeExecutor:
                 self.db.execute_query("UPDATE predictions SET prediction = ?, confidence = ?, reasoning = ? WHERE id = ?", 
                                      (decision_result['decision'], decision_result['confidence'], str(decision_result['reasoning']), prediction_id))
             else:
-                # If failed, maybe delete PENDING? For traceability, keeping it as PENDING is fine.
-                pass
+                # Update PENDING prediction to HOLD if failed
+                self.db.execute_query("UPDATE predictions SET prediction = 'HOLD', confidence = 0.0, reasoning = 'Failed to get valid decision from AI' WHERE id = ?", (prediction_id,))
 
         else:
             decision_result = self.agent.make_decision(market_data)

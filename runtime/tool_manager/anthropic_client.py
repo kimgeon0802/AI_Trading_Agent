@@ -61,8 +61,14 @@ class AnthropicClient:
         return APIStatus.API_ERROR, None
 
     def _get_mock_response(self):
-        decisions = ["PASS", "WARNING", "REJECT"]
-        decision = random.choice(decisions)
+        # Allow test to force a decision
+        forced_decision = os.getenv("FORCE_CLAUDE_DECISION")
+        if forced_decision:
+            decision = forced_decision
+        else:
+            decisions = ["PASS", "WARNING", "REJECT"]
+            decision = random.choice(decisions)
+        
         score = round(random.uniform(50, 95), 2)
         
         mock_data = {
