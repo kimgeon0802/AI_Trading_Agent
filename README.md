@@ -2,77 +2,37 @@
 
 ## 프로젝트 개요
 
-이 프로젝트는 AI 기반 가상 투자 연구 시스템이다.
+이 프로젝트는 Multi-AI 기반 가상 투자 연구 시스템입니다.
 
-이 프로젝트의 목적은 단순 수익 창출이나 자동매매가 아니다.
+단순 수익 창출이나 자동매매가 아닌, AI의 시장 해석 논리, 투자 결정 과정, 데이터 중요도, 예측 성공/실패 원인을 연구합니다.
 
-핵심 목표는 다음과 같다.
-
-- AI가 시장을 어떻게 해석하는가
-- AI가 어떤 논리로 투자 결정을 내리는가
-- 어떤 데이터를 중요하게 판단하는가
-- 왜 예측이 실패하거나 성공하는가
-
-이 프로젝트는 다음 구조를 기반으로 동작한다.
-
-- GPT API → 메인 추론 및 투자 판단
-- Python → 실행 및 데이터 관리
-- SQLite → 로그 및 거래 기록 저장
-
-모든 거래는 가상 계좌 기반으로 수행된다.
-
-실제 증권 계좌 및 실거래는 사용하지 않는다.
-
----
-
-# 핵심 철학
-
-AI = 두뇌  
-Python = 몸
-
-Python 역할:
-
-- 데이터 수집
-- 스케줄 실행
-- Tool 실행
-- DB 저장
-- 로그 관리
-
-AI 역할:
-
-- 시장 분석
-- 관계형 추론
-- 투자 판단
-- 리스크 평가
-- 예측 생성
-
----
-
-# 현재 개발 단계
-
-현재 단계: Phase 1 (MVP)
-
-현재 구현 목표:
-
-- 가상 계좌 시스템
-- GPT 기반 투자 판단
-- 뉴스 분석
-- BUY / SELL / HOLD 결정
-- 사고 로그 저장
-- 예측 보고서 저장
+주요 특징:
+- **Multi-AI Trading Architecture**: GPT, Claude를 활용한 Consensus 기반 판단
+- **Safe Fallback**: API 장애 시 HOLD Fallback 처리
+- **Prediction-to-Trade Traceability**: prediction_id를 통한 예측-거래-성과 추적
+- **Comprehensive Reporting**: 상세 거래 보고서 및 AI 연구 보고서 자동 생성
+- **Virtual Environment**: 가상 계좌 시스템 (실거래 불가)
 
 ---
 
 # 프로젝트 구조
 
 ```text
-docs/
-prompts/
-runtime/
-agents/
-logs/
-data/
+agents/          # Multi-AI Agent 로직
+data/            # DB (trading.db), 보고서(reports/)
+docs/            # 상세 문서
+prompts/         # AI 프롬프트
+runtime/         # 실행 및 관리(executor, tool_manager)
+tests/           # 테스트
 ```
+
+---
+
+# 현재 개발 상태 (Current Status)
+
+- **Phase 1 (Completed)**: 가상 계좌 시스템, GPT 기반 투자 판단, 뉴스 분석, BUY/SELL/HOLD 결정, 사고 로그 저장.
+- **Phase 2 (Completed)**: Multi-AI Orchestrator 도입, API 에러 핸들링, Prediction Traceability(prediction_id).
+- **Phase 3 (Current)**: 상세 거래 보고서 및 AI 연구 보고서 자동 생성.
 
 ---
 
@@ -82,5 +42,5 @@ data/
 - 모든 투자 판단은 AI가 수행한다.
 - 모든 AI 응답은 JSON 구조를 사용한다.
 - 모든 사고 과정은 로그로 저장한다.
-- 확신도가 낮으면 HOLD를 선택한다.
+- 모든 거래 및 평가는 `prediction_id`를 기반으로 추적한다.
 - 실제 증권 API 연동은 금지한다.

@@ -23,7 +23,7 @@ class PortfolioManager:
             "holdings": holdings
         }
 
-    def execute_decision(self, ticker, decision_data, current_price):
+    def execute_decision(self, ticker, decision_data, current_price, prediction_id=None):
         decision = decision_data["decision"]
         confidence = decision_data["confidence"]
         timestamp = datetime.now().isoformat()
@@ -32,16 +32,16 @@ class PortfolioManager:
         cash = portfolio["cash"]
         
         if decision == "BUY":
-            self._handle_buy(ticker, cash, current_price, confidence, timestamp)
+            self._handle_buy(ticker, cash, current_price, confidence, timestamp, prediction_id)
         elif decision == "SELL":
-            self._handle_sell(ticker, current_price, confidence, timestamp)
+            self._handle_sell(ticker, current_price, confidence, timestamp, prediction_id)
         else:
             logger.info(f"HOLD decision for {ticker}. No action taken.")
         
         # Update total asset value
         self._update_total_asset(current_price, timestamp)
 
-    def _handle_buy(self, ticker, available_cash, price, confidence, timestamp):
+    def _handle_buy(self, ticker, available_cash, price, confidence, timestamp, prediction_id=None):
         # MVP logic: use 20% of cash for BUY
         investment_amount = available_cash * 0.2
         quantity = int(investment_amount // price)
@@ -63,12 +63,12 @@ class PortfolioManager:
             
             self.db.update_holding(ticker, new_quantity, new_avg_price)
             self.db.update_portfolio(new_cash, 0, timestamp) # total_asset updated later
-            self.db.save_trade(timestamp, ticker, "BUY", quantity, price, confidence)
+            self.db.save_trade(timestamp, ticker, "BUY", quantity, price, confidence, prediction_id=prediction_id)
             logger.info(f"BUY executed: {ticker}, {quantity} shares at {price}")
         else:
             logger.warning(f"Insufficient cash to BUY {ticker} at {price}")
 
-    def _handle_sell(self, ticker, price, confidence, timestamp):
+    def _handle_sell(self, ticker, price, confidence, timestamp, prediction_id=None):
         holdings = self.db.get_holdings()
         current_holding = next((h for h in holdings if h["ticker"] == ticker), None)
         
@@ -81,7 +81,7 @@ class PortfolioManager:
             
             self.db.update_holding(ticker, 0, 0)
             self.db.update_portfolio(new_cash, 0, timestamp)
-            self.db.save_trade(timestamp, ticker, "SELL", quantity, price, confidence)
+            self.db.save_trade(timestamp, ticker, "SELL", quantity, price, confidence, prediction_id=prediction_id)
             logger.info(f"SELL executed: {ticker}, {quantity} shares at {price}")
         else:
             logger.warning(f"No holdings of {ticker} to SELL")

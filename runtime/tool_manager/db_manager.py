@@ -22,6 +22,12 @@ class DatabaseManager:
                 confidence REAL
             )
         ''')
+        # Check if prediction_id exists in trades, if not, add it
+        cursor.execute("PRAGMA table_info(trades)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'prediction_id' not in columns:
+            cursor.execute('ALTER TABLE trades ADD COLUMN prediction_id INTEGER')
+            self.connection.commit()
         
         # predictions table
         cursor.execute('''
@@ -40,6 +46,7 @@ class DatabaseManager:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS reasoning_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prediction_id INTEGER,
                 timestamp TEXT,
                 decision TEXT,
                 reasoning TEXT,
@@ -47,6 +54,12 @@ class DatabaseManager:
                 confidence REAL
             )
         ''')
+        # Ensure prediction_id exists in reasoning_logs if table already existed without it
+        cursor.execute("PRAGMA table_info(reasoning_logs)")
+        columns = [column[1] for column in cursor.fetchall()]
+        if 'prediction_id' not in columns:
+            cursor.execute('ALTER TABLE reasoning_logs ADD COLUMN prediction_id INTEGER')
+            self.connection.commit()
         
         # evaluation_logs table
         cursor.execute('''
@@ -140,9 +153,9 @@ class DatabaseManager:
         results = self.execute_query(query)
         return {r[0]: r[1] for r in results}
 
-    def save_reasoning(self, decision, reasoning, risks, confidence, timestamp):
-        query = "INSERT INTO reasoning_logs (timestamp, decision, reasoning, risks, confidence) VALUES (?, ?, ?, ?, ?)"
-        self.execute_query(query, (timestamp, decision, str(reasoning), str(risks), confidence))
+    def save_reasoning(self, decision, reasoning, risks, confidence, timestamp, prediction_id=None):
+        query = "INSERT INTO reasoning_logs (timestamp, decision, reasoning, risks, confidence, prediction_id) VALUES (?, ?, ?, ?, ?, ?)"
+        self.execute_query(query, (timestamp, decision, str(reasoning), str(risks), confidence, prediction_id))
 
     def save_prediction(self, ticker, prediction, expected_return, confidence, reasoning, timestamp):
         query = "INSERT INTO predictions (timestamp, ticker, prediction, expected_return, confidence, reasoning) VALUES (?, ?, ?, ?, ?, ?)"
@@ -179,9 +192,9 @@ class DatabaseManager:
             insert_query = "INSERT INTO holdings (ticker, quantity, average_price) VALUES (?, ?, ?)"
             self.execute_query(insert_query, (ticker, quantity, average_price))
 
-    def save_trade(self, timestamp, ticker, decision, quantity, price, confidence):
-        query = "INSERT INTO trades (timestamp, ticker, decision, quantity, price, confidence) VALUES (?, ?, ?, ?, ?, ?)"
-        self.execute_query(query, (timestamp, ticker, decision, quantity, price, confidence))
+    def save_trade(self, timestamp, ticker, decision, quantity, price, confidence, prediction_id=None):
+        query = "INSERT INTO trades (timestamp, ticker, decision, quantity, price, confidence, prediction_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        self.execute_query(query, (timestamp, ticker, decision, quantity, price, confidence, prediction_id))
 
     def get_pending_evaluations(self):
         # Get predictions that haven't been evaluated yet

@@ -2,17 +2,17 @@
 
 # 목적
 
-이 문서는 AI 투자 판단 기준을 정의한다.
+이 문서는 AI 투자 판단 기준을 정의합니다.
 
-실제 판단은 GPT가 수행한다.
+최종 투자 판단은 **ConsensusManager**가 GPT(1차 판단)와 Claude(2차 검증) 결과를 바탕으로 수행합니다.
 
-Python은 투자 판단을 하지 않는다.
+Python은 투자 판단을 하지 않으며 오직 실행을 담당합니다.
 
 ---
 
 # 기본 판단 유형
 
-AI는 다음 3가지 중 하나를 선택해야 한다.
+AI는 다음 3가지 중 하나를 선택해야 합니다.
 
 - BUY
 - SELL
@@ -20,61 +20,17 @@ AI는 다음 3가지 중 하나를 선택해야 한다.
 
 ---
 
-# BUY 조건
+# Multi-AI 판단 Flow
 
-다음 요소가 긍정적일 경우 BUY 가능:
-
-- 시장 흐름 긍정적
-- 뉴스 긍정적
-- 기술 지표 긍정적
-- 리스크 낮음
-- confidence 높음
-
----
-
-# SELL 조건
-
-다음 요소가 부정적일 경우 SELL 가능:
-
-- 시장 악화
-- 리스크 증가
-- 악재 뉴스 발생
-- confidence 감소
-
----
-
-# HOLD 조건
-
-다음 상황에서는 HOLD 우선:
-
-- 데이터 부족
-- 방향성 불확실
-- 리스크 과도
-- confidence 낮음
-
----
-
-# Confidence 규칙
-
-confidence 범위:
-
-```text
-0.0 ~ 1.0
-```
-
-예시:
-
-```text
-0.2 → 매우 낮음
-0.5 → 중립
-0.8 → 높은 확신
-```
+1. **Market Data** → **GPTAgent** (1차 판단, Reasoning, Risks, Confidence)
+2. **GPT Output** → **ClaudeAgent** (검증, PASS/WARNING/REJECT, Score, Evaluation)
+3. **Claude Output** → **ConsensusManager** (최종 판단)
 
 ---
 
 # 중요 규칙
 
-- AI는 반드시 판단 이유를 설명해야 한다.
-- AI는 반드시 리스크를 설명해야 한다.
-- 정보 부족 시 HOLD 우선.
-- 높은 confidence라도 리스크 설명 필수.
+- 모든 판단은 `prediction_id` 기반으로 추적됩니다.
+- GPT/Claude 응답은 항상 JSON 구조를 사용합니다.
+- API 에러 발생 시 ConsensusManager는 HOLD를 선택합니다.
+- 데이터 부족 시 HOLD를 우선합니다.

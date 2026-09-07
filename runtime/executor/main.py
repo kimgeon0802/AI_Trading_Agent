@@ -64,6 +64,7 @@ class RuntimeExecutor:
         # 2. Get Decision from AI
         logger.info(f"Requesting decision from AI agent for {target_ticker} at price {current_price}...")
         
+        prediction_id = None
         if self.ai_mode == "multi":
             # Save a placeholder prediction to get a prediction_id
             timestamp = datetime.now().isoformat()
@@ -76,7 +77,20 @@ class RuntimeExecutor:
             decision_result = self.agent.execute(market_data, prediction_id)
         else:
             decision_result = self.agent.make_decision(market_data)
-            # For single mode, save prediction later
+            # Save prediction to get prediction_id
+            if decision_result:
+                timestamp = datetime.now().isoformat()
+                self.db.save_prediction(
+                    target_ticker,
+                    decision_result['decision'],
+                    0.0,
+                    decision_result['confidence'],
+                    str(decision_result['reasoning']),
+                    timestamp
+                )
+                cursor = self.db.connection.cursor()
+                cursor.execute("SELECT id FROM predictions ORDER BY id DESC LIMIT 1")
+                prediction_id = cursor.fetchone()[0]
         
         if decision_result:
             timestamp = datetime.now().isoformat()
@@ -96,28 +110,18 @@ class RuntimeExecutor:
             else:
                 logger.info(f"AI Decision for {target_ticker}: {decision_result['decision']} (Confidence: {decision_result['confidence']})")
             
-            # Save prediction to DB (already done for multi mode, but needs update if we want to save final)
-            if self.ai_mode != "multi":
-                self.db.save_prediction(
-                    target_ticker,
-                    decision_result['decision'],
-                    0.0,
-                    decision_result['confidence'],
-                    str(decision_result['reasoning']),
-                    timestamp
-                )
-            
-            # 3. Save Reasoning
+            # 3. Save Reasoning (updated to use prediction_id)
             self.db.save_reasoning(
                 decision_result['decision'],
                 decision_result['reasoning'],
                 decision_result['risks'],
                 decision_result['confidence'],
-                timestamp
+                timestamp,
+                prediction_id=prediction_id
             )
             
-            # 4. Update Virtual Portfolio
-            self.portfolio_manager.execute_decision(target_ticker, decision_result, current_price)
+            # 4. Update Virtual Portfolio (pass prediction_id)
+            self.portfolio_manager.execute_decision(target_ticker, decision_result, current_price, prediction_id=prediction_id)
             
             # 5. Run Evaluation for pending predictions
             # In Phase 1 MVP, we evaluate against the current price just generated
