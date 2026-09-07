@@ -159,7 +159,10 @@ class DatabaseManager:
 
     def save_prediction(self, ticker, prediction, expected_return, confidence, reasoning, timestamp):
         query = "INSERT INTO predictions (timestamp, ticker, prediction, expected_return, confidence, reasoning) VALUES (?, ?, ?, ?, ?, ?)"
-        self.execute_query(query, (timestamp, ticker, prediction, expected_return, confidence, reasoning))
+        cursor = self.connection.cursor()
+        cursor.execute(query, (timestamp, ticker, prediction, expected_return, confidence, reasoning))
+        self.connection.commit()
+        return cursor.lastrowid
 
     def get_portfolio(self):
         query = "SELECT cash, total_asset FROM portfolio ORDER BY id DESC LIMIT 1"

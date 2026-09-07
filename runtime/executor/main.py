@@ -66,21 +66,27 @@ class RuntimeExecutor:
         
         prediction_id = None
         if self.ai_mode == "multi":
-            # Save a placeholder prediction to get a prediction_id
+            # 1. Create a dummy prediction record to get ID
             timestamp = datetime.now().isoformat()
-            self.db.save_prediction(target_ticker, "PENDING", 0.0, 0.0, "Multi-AI Pending", timestamp)
-            # Get the ID of the prediction we just saved
-            cursor = self.db.connection.cursor()
-            cursor.execute("SELECT id FROM predictions ORDER BY id DESC LIMIT 1")
-            prediction_id = cursor.fetchone()[0]
+            prediction_id = self.db.save_prediction(target_ticker, "PENDING", 0.0, 0.0, "Multi-AI Pending", timestamp)
             
+            # 2. Call orchestrator with the prediction_id
             decision_result = self.agent.execute(market_data, prediction_id)
+            
+            # 3. Update the prediction record with final decision
+            if decision_result:
+                self.db.execute_query("UPDATE predictions SET prediction = ?, confidence = ?, reasoning = ? WHERE id = ?", 
+                                     (decision_result['decision'], decision_result['confidence'], str(decision_result['reasoning']), prediction_id))
+            else:
+                # If failed, maybe delete PENDING? For traceability, keeping it as PENDING is fine.
+                pass
+
         else:
             decision_result = self.agent.make_decision(market_data)
             # Save prediction to get prediction_id
             if decision_result:
                 timestamp = datetime.now().isoformat()
-                self.db.save_prediction(
+                prediction_id = self.db.save_prediction(
                     target_ticker,
                     decision_result['decision'],
                     0.0,
@@ -88,9 +94,6 @@ class RuntimeExecutor:
                     str(decision_result['reasoning']),
                     timestamp
                 )
-                cursor = self.db.connection.cursor()
-                cursor.execute("SELECT id FROM predictions ORDER BY id DESC LIMIT 1")
-                prediction_id = cursor.fetchone()[0]
         
         if decision_result:
             timestamp = datetime.now().isoformat()
