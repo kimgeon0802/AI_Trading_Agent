@@ -4,6 +4,7 @@ import random
 import logging
 import time
 import anthropic
+import httpx
 from dotenv import load_dotenv
 from runtime.tool_manager.api_error_handler import APIStatus, classify_error
 
@@ -21,7 +22,7 @@ class AnthropicClient:
             raise ValueError("ANTHROPIC_API_KEY not found and USE_MOCK_CLAUDE is false")
         
         if not self.use_mock:
-            self.client = anthropic.Anthropic(api_key=self.api_key)
+            self.client = anthropic.Anthropic(api_key=self.api_key, max_retries=0)
         else:
             self.client = None
 
@@ -40,6 +41,10 @@ class AnthropicClient:
                     ]
                 )
                 return APIStatus.SUCCESS, message.content[0].text
+            except (anthropic.BadRequestError, anthropic.AuthenticationError) as e:
+                # These are NOT retryable
+                logger.error(f"Anthropic API Non-Retryable Error: {e}")
+                return APIStatus.API_ERROR, None
             except anthropic.APIError as e:
                 status = classify_error(e)
                 if status == APIStatus.RETRYABLE_ERROR and attempt < self.max_retries:
@@ -51,7 +56,7 @@ class AnthropicClient:
                     logger.error(f"Anthropic API Error ({status}): {e}")
                     return status, None
             except Exception as e:
-                logger.error(f"Unexpected Anthropic error: {e}")
+                logger.error(f"Unexpected Anthropic error: {type(e).__name__} - {e}")
                 return APIStatus.API_ERROR, None
         return APIStatus.API_ERROR, None
 
