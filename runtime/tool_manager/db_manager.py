@@ -99,6 +99,20 @@ class DatabaseManager:
             )
         ''')
         
+        # agent_decisions table (added for Phase 3)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS agent_decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prediction_id INTEGER,
+                timestamp TEXT,
+                model_name TEXT,
+                decision TEXT,
+                confidence REAL,
+                reasoning TEXT,
+                risk_assessment TEXT
+            )
+        ''')
+        
         self.connection.commit()
 
     def execute_query(self, query, params=()):
@@ -179,6 +193,10 @@ class DatabaseManager:
         """
         results = self.execute_query(query)
         return [{"id": r[0], "timestamp": r[1], "ticker": r[2], "prediction": r[3], "confidence": r[4]} for r in results]
+
+    def save_agent_decision(self, prediction_id, timestamp, model_name, decision, confidence, reasoning, risk_assessment):
+        query = "INSERT INTO agent_decisions (prediction_id, timestamp, model_name, decision, confidence, reasoning, risk_assessment) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        self.execute_query(query, (prediction_id, timestamp, model_name, decision, confidence, str(reasoning), str(risk_assessment)))
 
     def save_evaluation(self, prediction_id, actual_result, evaluation, success, timestamp):
         query = "INSERT INTO evaluation_logs (timestamp, prediction_id, actual_result, evaluation, success) VALUES (?, ?, ?, ?, ?)"

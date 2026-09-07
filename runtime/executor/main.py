@@ -5,6 +5,7 @@ import os
 import random
 from datetime import datetime
 from agents.gpt_agent.agent import GPTAgent
+from agents.multi_ai.orchestrator import MultiAIOrchestrator
 from runtime.tool_manager.db_manager import DatabaseManager
 from runtime.tool_manager.portfolio_manager import PortfolioManager
 from runtime.tool_manager.evaluation_manager import EvaluationManager
@@ -33,13 +34,20 @@ class RuntimeExecutor:
         self.sentiment_analyzer = SentimentAnalyzer()
         self.macro_manager = MacroManager(self.db)
         self.risk_manager = RiskManager(self.db)
-        self.agent = GPTAgent()
+        
+        self.ai_mode = os.environ.get("TRADING_AI_MODE", "single")
+        if self.ai_mode == "multi":
+            logger.info("Initializing MultiAIOrchestrator")
+            self.agent = MultiAIOrchestrator(self.db)
+        else:
+            logger.info("Initializing GPTAgent")
+            self.agent = GPTAgent()
         
         # Initialize portfolio if needed
         self.portfolio_manager.ensure_initial_portfolio()
 
     async def run_cycle(self, market_condition=None):
-        logger.info("Starting new trading cycle...")
+        logger.info(f"Starting new trading cycle... (Mode: {self.ai_mode})")
         
         # 0. Simulate Market Movement
         if market_condition:
@@ -55,21 +63,46 @@ class RuntimeExecutor:
         
         # 2. Get Decision from AI
         logger.info(f"Requesting decision from AI agent for {target_ticker} at price {current_price}...")
-        decision_result = self.agent.make_decision(market_data)
+        
+        if self.ai_mode == "multi":
+            # Save a placeholder prediction to get a prediction_id
+            timestamp = datetime.now().isoformat()
+            self.db.save_prediction(target_ticker, "PENDING", 0.0, 0.0, "Multi-AI Pending", timestamp)
+            # Get the ID of the prediction we just saved
+            cursor = self.db.connection.cursor()
+            cursor.execute("SELECT id FROM predictions ORDER BY id DESC LIMIT 1")
+            prediction_id = cursor.fetchone()[0]
+            
+            decision_result = self.agent.execute(market_data, prediction_id)
+        else:
+            decision_result = self.agent.make_decision(market_data)
+            # For single mode, save prediction later
         
         if decision_result:
             timestamp = datetime.now().isoformat()
-            logger.info(f"AI Decision for {target_ticker}: {decision_result['decision']} (Confidence: {decision_result['confidence']})")
             
-            # Save prediction to DB
-            self.db.save_prediction(
-                target_ticker,
-                decision_result['decision'],
-                0.0,
-                decision_result['confidence'],
-                str(decision_result['reasoning']),
-                timestamp
-            )
+            # Log results based on mode
+            if self.ai_mode == "multi":
+                logger.info(f"Multi-AI Consensus Decision for {target_ticker}: {decision_result['decision']} (Confidence: {decision_result['confidence']})")
+                logger.info(f"Consensus Method: {decision_result['consensus']['method']}")
+                for agent, res in decision_result["agent_results"].items():
+                    if res:
+                        logger.info(f" -> {agent.upper()}: {res['decision']} (Confidence: {res['confidence']})")
+                    else:
+                        logger.info(f" -> {agent.upper()}: Failed/None")
+            else:
+                logger.info(f"AI Decision for {target_ticker}: {decision_result['decision']} (Confidence: {decision_result['confidence']})")
+            
+            # Save prediction to DB (already done for multi mode, but needs update if we want to save final)
+            if self.ai_mode != "multi":
+                self.db.save_prediction(
+                    target_ticker,
+                    decision_result['decision'],
+                    0.0,
+                    decision_result['confidence'],
+                    str(decision_result['reasoning']),
+                    timestamp
+                )
             
             # 3. Save Reasoning
             self.db.save_reasoning(

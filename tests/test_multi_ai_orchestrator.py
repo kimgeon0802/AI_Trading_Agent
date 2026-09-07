@@ -4,8 +4,9 @@ from agents.multi_ai.orchestrator import MultiAIOrchestrator
 
 class TestMultiAIOrchestrator(unittest.TestCase):
     def setUp(self):
-        self.orchestrator = MultiAIOrchestrator()
-        self.sample_data = {"market_summary": {"condition": "neutral"}}
+        self.mock_db = MagicMock()
+        self.orchestrator = MultiAIOrchestrator(self.mock_db)
+        self.sample_data = {"market_summary": {"condition": "neutral"}, "timestamp": "2026-09-07T11:00:00"}
         self.mock_buy = {"decision": "BUY", "confidence": 0.8, "reasoning": "R1", "risks": "Risk1", "expected_result": "E1"}
         self.mock_sell = {"decision": "SELL", "confidence": 0.7, "reasoning": "R2", "risks": "Risk2", "expected_result": "E2"}
 
@@ -14,7 +15,7 @@ class TestMultiAIOrchestrator(unittest.TestCase):
         self.orchestrator.gpt_agent.make_decision = MagicMock(return_value=self.mock_buy)
         self.orchestrator.claude_agent.make_decision = MagicMock(return_value=self.mock_buy)
         
-        result = self.orchestrator.execute(self.sample_data)
+        result = self.orchestrator.execute(self.sample_data, 1)
         
         self.assertEqual(result["decision"], "BUY")
         self.assertIn("gpt", result["agent_results"])
@@ -25,7 +26,7 @@ class TestMultiAIOrchestrator(unittest.TestCase):
         self.orchestrator.gpt_agent.make_decision = MagicMock(return_value=self.mock_buy)
         self.orchestrator.claude_agent.make_decision = MagicMock(return_value=self.mock_sell)
         
-        result = self.orchestrator.execute(self.sample_data)
+        result = self.orchestrator.execute(self.sample_data, 1)
         
         # BUY (0.8) > SELL (0.7)
         self.assertEqual(result["decision"], "BUY")
@@ -35,7 +36,7 @@ class TestMultiAIOrchestrator(unittest.TestCase):
         self.orchestrator.gpt_agent.make_decision = MagicMock(side_effect=Exception("API Error"))
         self.orchestrator.claude_agent.make_decision = MagicMock(return_value=self.mock_buy)
         
-        result = self.orchestrator.execute(self.sample_data)
+        result = self.orchestrator.execute(self.sample_data, 1)
         
         self.assertEqual(result["decision"], "BUY")
         self.assertIsNone(result["agent_results"]["gpt"])
@@ -45,7 +46,7 @@ class TestMultiAIOrchestrator(unittest.TestCase):
         self.orchestrator.gpt_agent.make_decision = MagicMock(side_effect=Exception("Err"))
         self.orchestrator.claude_agent.make_decision = MagicMock(side_effect=Exception("Err"))
         
-        result = self.orchestrator.execute(self.sample_data)
+        result = self.orchestrator.execute(self.sample_data, 1)
         
         self.assertEqual(result["decision"], "HOLD")
         self.assertEqual(result["consensus"]["method"], "fallback_hold")
