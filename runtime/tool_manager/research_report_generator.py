@@ -25,7 +25,7 @@ class ResearchReportGenerator:
             SELECT
                 p.id AS pid, p.ticker, p.timestamp,
                 p.prediction AS gpt_opinion, p.confidence AS gpt_conf, p.reasoning AS gpt_reasoning,
-                c.risk_assessment AS claude_val, c.confidence AS claude_score, c.reasoning AS claude_reasoning,
+                c.decision AS claude_val, c.confidence AS claude_score, c.reasoning AS claude_reasoning,
                 con.decision AS consensus_decision,
                 t.id AS trade_id, t.decision AS trade_decision, t.price AS trade_price, t.quantity AS trade_qty,
                 e.success, e.actual_result
@@ -43,7 +43,6 @@ class ResearchReportGenerator:
         return [dict(zip(columns, row)) for row in results]
 
     def _calculate_metrics(self, data):
-        # Implementation for performance analysis
         metrics = {
             'gpt': {'BUY': {'total': 0, 'success': 0}, 'SELL': {'total': 0, 'success': 0}, 'HOLD': {'total': 0, 'success': 0}},
             'claude': {'PASS': {'total': 0, 'trades': 0, 'success': 0}, 'WARNING': {'total': 0, 'trades': 0, 'success': 0}, 'REJECT': {'total': 0, 'trades': 0, 'success': 0}}
@@ -103,12 +102,22 @@ class ResearchReportGenerator:
             # 6. Performance Summary
             f.write("## AI 판단 성과 요약\n\n")
             f.write("| 모델 | BUY 성공률 | SELL 성공률 | HOLD 정확도 | 평균 수익률 |\n| --- | ---: | ---: | ---: | ---: |\n")
-            # Simplified for brevity in this step, complex calculations would go here
-            f.write("| GPT | 데이터 부족 | 데이터 부족 | 데이터 부족 | 데이터 부족 |\n")
-            f.write("| Claude PASS | 데이터 부족 | - | - | 데이터 부족 |\n\n")
-
+            
+            def get_success(model, decision):
+                total = metrics[model][decision]['total']
+                success = metrics[model][decision]['success']
+                return f"{(success/total)*100:.1f}%" if total > 0 else "데이터 부족"
+            
+            f.write(f"| GPT | {get_success('gpt', 'BUY')} | {get_success('gpt', 'SELL')} | {get_success('gpt', 'HOLD')} | 데이터 부족 |\n")
+            
+            f.write("\n\n## Claude 검증 효과\n\n| Claude 검증 | 전체 | 거래 | 성공 | 성공률 |\n| --- | ---: | ---: | ---: | ---: |\n")
+            for res in ['PASS', 'WARNING', 'REJECT']:
+                m = metrics['claude'][res]
+                success_rate = f"{(m['success']/m['trades'])*100:.1f}%" if m['trades'] > 0 else "데이터 부족"
+                f.write(f"| {res} | {m['total']} | {m['trades']} | {m['success']} | {success_rate} |\n")
+            
             # 9. Conclusion
-            f.write("## AI 연구 결론\n\n데이터 기반 분석이 완료되었습니다. 실제 데이터가 더 축적되면 상세 성과 분석이 가능합니다.\n")
+            f.write("\n\n## AI 연구 결론\n\n데이터 기반 분석이 완료되었습니다. 실제 데이터가 더 축적되면 상세 성과 분석이 가능합니다.\n")
             
         logger.info(f"Research report generated: {report_path}")
         return report_path

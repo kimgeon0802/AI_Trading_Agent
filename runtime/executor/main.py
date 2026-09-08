@@ -26,8 +26,8 @@ logging.basicConfig(
 logger = logging.getLogger("RuntimeExecutor")
 
 class RuntimeExecutor:
-    def __init__(self):
-        self.db = DatabaseManager()
+    def __init__(self, db_path="data/trading.db"):
+        self.db = DatabaseManager(db_path=db_path)
         self.portfolio_manager = PortfolioManager(self.db)
         self.evaluation_manager = EvaluationManager(self.db)
         self.market_simulator = MarketSimulator()
