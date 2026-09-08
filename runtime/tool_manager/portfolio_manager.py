@@ -62,7 +62,7 @@ class PortfolioManager:
                 new_avg_price = price
             
             self.db.update_holding(ticker, new_quantity, new_avg_price)
-            self.db.update_portfolio(new_cash, 0, timestamp) # total_asset updated later
+            self.db.update_portfolio(new_cash, 0, timestamp) 
             self.db.save_trade(timestamp, ticker, "BUY", quantity, price, confidence, prediction_id=prediction_id)
             logger.info(f"BUY executed: {ticker}, {quantity} shares at {price}")
         else:
