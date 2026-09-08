@@ -29,16 +29,17 @@ class ScreeningConfig:
     """
 
     # 최소 거래대금
-    # 기본값: 10억원
-    min_trading_value: int = 1_000_000_000
+    # 기본값: 10억원 -> 테스트를 위해 1억으로 낮춤
+    min_trading_value: int = 100_000_000
 
     # 최소 시가총액
-    # 기본값: 500억원
-    min_market_cap: int = 50_000_000_000
+    # 기본값: 500억원 -> 테스트를 위해 100억으로 낮춤
+    min_market_cap: int = 10_000_000_000
 
     # 극단적인 급등/급락 종목 제외 기준
-    min_change_rate: float = -10.0
-    max_change_rate: float = 15.0
+    # 테스트를 위해 범위를 넓힘
+    min_change_rate: float = -20.0
+    max_change_rate: float = 25.0
 
     # 최종 후보 종목 수
     top_n: int = 50

@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+import json
 from datetime import datetime
 
 from market.pipeline import MarketPipeline
+from market.market_data_adapter import MarketDataAdapter
 from agents.multi_ai.orchestrator import MultiAIOrchestrator
 
 from runtime.tool_manager.db_manager import DatabaseManager
@@ -68,6 +70,7 @@ class RuntimeExecutor:
         )
         
         self.market_pipeline = MarketPipeline()
+        self.market_data_adapter = MarketDataAdapter()
 
         # ----------------------------------------------------
         # Multi-AI Orchestrator
@@ -131,6 +134,10 @@ class RuntimeExecutor:
         # Run based on Mode
         # ----------------------------------------------------
         
+        if os.environ.get("VALIDATE_ADAPTER_ONLY", "false").lower() == "true":
+            await self._run_adapter_validation()
+            return
+            
         if self.is_real_ai_mode:
             await self._run_real_ai_cycle(market_condition)
         else:
@@ -361,37 +368,91 @@ class RuntimeExecutor:
             f"for prediction_id={prediction_id}"
         )
 
-    async def _run_real_ai_cycle(self, market_condition=None):
+    async def _run_adapter_validation(self):
         """
-        MarketPipeline 기반 실제 AI 분석 파이프라인
+        MarketDataAdapter 변환 결과 및 GPT 입력 구조 검증.
         """
-        
-        logger.info("Running REAL AI mode pipeline...")
-        
-        # 1. MarketPipeline 실행
+        logger.info("Running ADAPTER VALIDATION mode...")
+
+        # 1. Pipeline 실행
         candidates = self.market_pipeline.run()
-        
         if candidates.empty:
-            logger.info("[INFO] No validated candidates found. Skipping AI analysis.")
+            logger.error("[ERROR] No validated candidates found. Adapter validation skipped.")
             return
 
-        # 2. Top N 후보 선정
-        max_candidates = int(os.environ.get("MAX_GPT_CANDIDATES", 5))
-        top_candidates = candidates.head(max_candidates)
+        # 로그 출력
+        logger.info("=" * 40)
+        logger.info("MARKET PIPELINE RESULT")
+        logger.info("=" * 20)
+        logger.info(f"Candidate Count : {len(candidates)}")
+        logger.info(f"Columns: {list(candidates.columns)}")
+        logger.info("Candidate Preview:")
+        for i, row in candidates.head(5).iterrows():
+            logger.info(f"{i+1}. {row.get('ticker')} / {row.get('name')} / {row.get('market')}")
+        logger.info("=" * 40)
+
+        # 2. 데이터 변환
+        portfolio_state = self.portfolio_manager.get_current_state()
+        self.macro_manager.fetch_and_save_macro_data()
+        macro_data = self.macro_manager.get_current_macro_indicators()
         
-        logger.info(f"[INFO] Analyzing Top {len(top_candidates)} candidates.")
+        market_data_list = self.market_data_adapter.convert_candidates(
+            candidates,
+            portfolio_state=portfolio_state,
+            macro_data=macro_data
+        )
+
+        # 3. 검증
+        logger.info("=" * 40)
+        logger.info("ADAPTER OUTPUT VALIDATION")
+        logger.info("=" * 20)
+        logger.info(f"Pipeline Candidates : {len(candidates)}")
+        logger.info(f"Adapter Outputs     : {len(market_data_list)}")
         
-        # 3. 각 후보별 분석 (예시 흐름 - 추후 상세 구현 필요)
-        for _, candidate in top_candidates.iterrows():
-            ticker = candidate["ticker"]
-            price = candidate["close"]
+        if len(candidates) != len(market_data_list):
+            logger.error("Candidate Count Check: FAIL")
+        else:
+            logger.info("Candidate Count Check: PASS")
+
+        # 필수 필드 검증
+        required_fields = ["ticker", "name", "market", "market_data", "portfolio", "macro_data"]
+        all_passed = True
+        
+        for data in market_data_list:
+            missing = [f for f in required_fields if f not in data]
+            if missing:
+                logger.error(f"GPT input validation failed for Ticker: {data.get('ticker')}")
+                logger.error(f"Missing Fields: {missing}")
+                all_passed = False
+        
+        logger.info(f"GPT Input Validation: {'PASS' if all_passed else 'FAIL'}")
+
+        # JSON / Type 검증
+        json_passed = True
+        type_passed = True
+        
+        for data in market_data_list:
+            ticker = data.get("ticker")
+            try:
+                json_str = json.dumps(data, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"JSON serialization failed for {ticker}: {e}")
+                json_passed = False
             
-            logger.info(f"[INFO] Analyzing candidate: {ticker} ({candidate['name']})")
-            
-            # 여기서부터 GPT/Claude 분석 로직 연결 (구조는 _run_mock_cycle 참고)
-            # prediction 기록 생성, agent.execute() 호출, Portfolio 연결 등
-            
-            # --- (이후 작업에서 이 부분을 구체화합니다) ---
+            type_errors = self.market_data_adapter.validate_types(data)
+            if type_errors:
+                logger.error(f"Data type validation failed for {ticker}: {type_errors}")
+                type_passed = False
+        
+        logger.info(f"JSON Serialization: {'PASS' if json_passed else 'FAIL'}")
+        logger.info(f"Data Type Validation: {'PASS' if type_passed else 'FAIL'}")
+        
+        logger.info("OpenAI API Called: NO")
+        logger.info("Claude API Called: NO")
+        logger.info("=" * 40)
+        logger.info("ADAPTER VALIDATION COMPLETED")
+        logger.info("=" * 28)
+
 
 
     # ========================================================

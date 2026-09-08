@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -54,6 +54,7 @@ class MarketDataCollector:
 
     def __init__(self):
         self.collected_at = None
+        self.MAX_LOOKBACK_DAYS = 10
 
         self.krx_id = os.getenv("KRX_ID")
         self.krx_pw = os.getenv("KRX_PW")
@@ -91,12 +92,41 @@ class MarketDataCollector:
     def get_request_date(self):
         """
         현재 날짜를 pykrx 요청용 YYYYMMDD 형식으로 반환한다.
-
-        현재 단계에서는 오늘 날짜를 사용한다.
-        향후 휴장일 대응 로직을 추가할 예정이다.
         """
 
         return datetime.now().strftime("%Y%m%d")
+
+    def _get_valid_trading_days(self):
+        """
+        최근 거래일 목록을 가져온다.
+        """
+        # 현재 날짜 기준 최근 2개월의 거래일을 가져와서 충분한 후보군 확보
+        today = datetime.now()
+        
+        # 현재 달과 이전 달을 포함
+        dates = []
+        for i in range(2):
+            target_date = today - timedelta(days=i*30)
+            dates.extend(stock.get_previous_business_days(year=target_date.year, month=target_date.month))
+        
+        # 중복 제거 및 정렬
+        sorted_dates = sorted(list(set(dates)))
+        return sorted_dates
+
+    def _is_data_valid(self, df: pd.DataFrame) -> bool:
+        """
+        수집된 데이터가 유효한지 검증한다.
+        """
+        if df.empty:
+            return False
+        
+        # 중요 가격/시가총액 데이터가 모두 0이면 유효하지 않음으로 간주
+        critical_cols = ['close', 'market_cap']
+        if all(col in df.columns for col in critical_cols):
+            if (df[critical_cols] == 0).all().all():
+                return False
+        
+        return True
 
     # ========================================================
     # Ticker List
@@ -367,87 +397,49 @@ class MarketDataCollector:
     def collect_all_markets(self):
         """
         KOSPI + KOSDAQ 전체 시장 데이터를 수집한다.
+        최신 유효 거래일 데이터를 수집한다.
         """
 
-        request_date = self.get_request_date()
+        requested_date = self.get_request_date()
+        valid_trading_days = self._get_valid_trading_days()
+        
+        print(f"[INFO] Requested data date: {requested_date}")
+        
+        # 최신 거래일부터 역순으로 조회
+        for target_date_ts in reversed(valid_trading_days):
+            target_date = target_date_ts.strftime("%Y%m%d")
+            
+            print(f"[INFO] Trying to collect data for: {target_date}")
+            
+            try:
+                kospi_df = self.collect_market("KOSPI", target_date)
+                kosdaq_df = self.collect_market("KOSDAQ", target_date)
+                
+                market_df = pd.concat([kospi_df, kosdaq_df], ignore_index=True)
+                
+                if self._is_data_valid(market_df):
+                    self.collected_at = datetime.now()
+                    market_df["data_date"] = target_date
+                    market_df["collected_at"] = self.collected_at.isoformat()
+                    
+                    # Log status
+                    print(f"[INFO] Data validation: SUCCESS")
+                    print(f"[INFO] Actual data date: {target_date}")
+                    print(f"[INFO] Data status: {'CURRENT' if target_date == requested_date else 'FALLBACK_CONFIRMED'}")
+                    
+                    # 컬럼 순서 통일
+                    return market_df[[
+                        "ticker", "name", "market", "open", "high", "low", "close",
+                        "change", "change_rate", "volume", "trading_value",
+                        "market_cap", "shares", "data_date", "collected_at"
+                    ]]
+                else:
+                    print(f"[WARNING] Data validation failed for: {target_date}")
+            
+            except Exception as e:
+                print(f"[ERROR] Failed to collect data for {target_date}: {e}")
 
-        print(
-            f"[INFO] 시장 데이터 기준일: "
-            f"{request_date}"
-        )
-
-        kospi_df = self.collect_market(
-            "KOSPI",
-            request_date
-        )
-
-        kosdaq_df = self.collect_market(
-            "KOSDAQ",
-            request_date
-        )
-
-        market_df = pd.concat(
-            [
-                kospi_df,
-                kosdaq_df,
-            ],
-            ignore_index=True
-        )
-
-        self.collected_at = datetime.now()
-
-        # 메타데이터 추가
-        market_df["data_date"] = request_date
-
-        market_df["collected_at"] = (
-            self.collected_at.isoformat()
-        )
-
-        # 컬럼 순서 통일
-        market_df = market_df[
-            [
-                "ticker",
-                "name",
-                "market",
-
-                "open",
-                "high",
-                "low",
-                "close",
-
-                "change",
-                "change_rate",
-
-                "volume",
-                "trading_value",
-
-                "market_cap",
-                "shares",
-
-                "data_date",
-                "collected_at",
-            ]
-        ]
-
-        print()
-        print(
-            "[INFO] =================================="
-        )
-
-        print(
-            "[INFO] 전체 시장 데이터 수집 완료"
-        )
-
-        print(
-            "[INFO] =================================="
-        )
-
-        print(
-            f"[INFO] 전체 종목 수: "
-            f"{len(market_df)}개"
-        )
-
-        return market_df
+        raise RuntimeError("최근 유효한 시장 데이터를 찾을 수 없습니다.")
 
 
 # ============================================================
