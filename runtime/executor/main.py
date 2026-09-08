@@ -3,6 +3,7 @@ import logging
 import os
 from datetime import datetime
 
+from market.pipeline import MarketPipeline
 from agents.multi_ai.orchestrator import MultiAIOrchestrator
 
 from runtime.tool_manager.db_manager import DatabaseManager
@@ -65,6 +66,8 @@ class RuntimeExecutor:
         self.risk_manager = RiskManager(
             self.db
         )
+        
+        self.market_pipeline = MarketPipeline()
 
         # ----------------------------------------------------
         # Multi-AI Orchestrator
@@ -91,20 +94,26 @@ class RuntimeExecutor:
         # Display Current AI Configuration
         # ----------------------------------------------------
 
-        use_mock_ai = os.environ.get(
+        self.use_mock_ai = os.environ.get(
             "USE_MOCK_AI",
             "true"
-        ).strip().lower()
+        ).strip().lower() == "true"
 
-        use_mock_claude = os.environ.get(
+        self.use_mock_claude = os.environ.get(
             "USE_MOCK_CLAUDE",
             "true"
-        ).strip().lower()
+        ).strip().lower() == "true"
+        
+        self.is_real_ai_mode = (
+            not self.use_mock_ai
+            and not self.use_mock_claude
+        )
 
         logger.info(
             f"AI Configuration - "
-            f"USE_MOCK_AI={use_mock_ai}, "
-            f"USE_MOCK_CLAUDE={use_mock_claude}"
+            f"USE_MOCK_AI={self.use_mock_ai}, "
+            f"USE_MOCK_CLAUDE={self.use_mock_claude}, "
+            f"IS_REAL_AI_MODE={self.is_real_ai_mode}"
         )
 
 
@@ -117,6 +126,20 @@ class RuntimeExecutor:
         logger.info(
             "Starting new trading cycle..."
         )
+
+        # ----------------------------------------------------
+        # Run based on Mode
+        # ----------------------------------------------------
+        
+        if self.is_real_ai_mode:
+            await self._run_real_ai_cycle(market_condition)
+        else:
+            await self._run_mock_cycle(market_condition)
+
+    async def _run_mock_cycle(self, market_condition=None):
+        """
+        기존 MOCK 테스트 파이프라인
+        """
 
         # ----------------------------------------------------
         # 0. Simulate Market Movement
@@ -179,15 +202,6 @@ class RuntimeExecutor:
 
         # ----------------------------------------------------
         # 3. Execute Multi-AI Pipeline
-        #
-        # MultiAIOrchestrator handles:
-        # - Mock GPT
-        # - Real GPT
-        # - Mock Claude
-        # - Real Claude
-        # - Retry
-        # - Credit Exhausted
-        # - Consensus
         # ----------------------------------------------------
 
         decision_result = None
@@ -233,12 +247,6 @@ class RuntimeExecutor:
                 []
             )
 
-            # ------------------------------------------------
-            # Update the existing prediction.
-            #
-            # Do NOT create another prediction row.
-            # ------------------------------------------------
-
             self.db.execute_query(
                 """
                 UPDATE predictions
@@ -255,75 +263,11 @@ class RuntimeExecutor:
                 )
             )
 
-            # ------------------------------------------------
-            # Logging
-            # ------------------------------------------------
-
             logger.info(
                 f"AI Decision for {target_ticker}: "
                 f"{decision} "
                 f"(Confidence: {confidence})"
             )
-
-            # ------------------------------------------------
-            # Multi-AI Trace Logging
-            # ------------------------------------------------
-
-            consensus = decision_result.get(
-                "consensus"
-            )
-
-            if consensus:
-
-                logger.info(
-                    f"Consensus Decision: {decision}"
-                )
-
-                logger.info(
-                    f"Consensus Method: "
-                    f"{consensus.get('method', 'unknown')}"
-                )
-
-            agent_results = decision_result.get(
-                "agent_results",
-                {}
-            )
-
-            for agent_name, result in agent_results.items():
-
-                if not result:
-
-                    logger.info(
-                        f" -> {agent_name.upper()}: "
-                        f"Failed/None"
-                    )
-
-                    continue
-
-                if agent_name.lower() == "gpt":
-
-                    logger.info(
-                        f" -> GPT: "
-                        f"{result.get('decision', 'UNKNOWN')} "
-                        f"(Confidence: "
-                        f"{result.get('confidence', 0.0)})"
-                    )
-
-                elif agent_name.lower() == "claude":
-
-                    logger.info(
-                        f" -> CLAUDE: "
-                        f"{result.get('evaluation', 'UNKNOWN')} "
-                        f"(Score: "
-                        f"{result.get('score', 0.0)})"
-                    )
-
-                else:
-
-                    logger.info(
-                        f" -> {agent_name.upper()}: "
-                        f"{result}"
-                    )
 
             # ------------------------------------------------
             # 5. Save Reasoning
@@ -350,13 +294,6 @@ class RuntimeExecutor:
             )
 
         else:
-
-            # ------------------------------------------------
-            # AI failure -> HOLD
-            #
-            # Keep prediction record.
-            # Never leave PENDING behind.
-            # ------------------------------------------------
 
             logger.error(
                 "Failed to get valid decision from AI. "
@@ -400,11 +337,6 @@ class RuntimeExecutor:
                 prediction_id=prediction_id
             )
 
-            # ------------------------------------------------
-            # HOLD is passed to PortfolioManager.
-            # It should perform no transaction.
-            # ------------------------------------------------
-
             self.portfolio_manager.execute_decision(
                 target_ticker,
                 decision_result,
@@ -428,6 +360,38 @@ class RuntimeExecutor:
             f"Trading cycle completed "
             f"for prediction_id={prediction_id}"
         )
+
+    async def _run_real_ai_cycle(self, market_condition=None):
+        """
+        MarketPipeline 기반 실제 AI 분석 파이프라인
+        """
+        
+        logger.info("Running REAL AI mode pipeline...")
+        
+        # 1. MarketPipeline 실행
+        candidates = self.market_pipeline.run()
+        
+        if candidates.empty:
+            logger.info("[INFO] No validated candidates found. Skipping AI analysis.")
+            return
+
+        # 2. Top N 후보 선정
+        max_candidates = int(os.environ.get("MAX_GPT_CANDIDATES", 5))
+        top_candidates = candidates.head(max_candidates)
+        
+        logger.info(f"[INFO] Analyzing Top {len(top_candidates)} candidates.")
+        
+        # 3. 각 후보별 분석 (예시 흐름 - 추후 상세 구현 필요)
+        for _, candidate in top_candidates.iterrows():
+            ticker = candidate["ticker"]
+            price = candidate["close"]
+            
+            logger.info(f"[INFO] Analyzing candidate: {ticker} ({candidate['name']})")
+            
+            # 여기서부터 GPT/Claude 분석 로직 연결 (구조는 _run_mock_cycle 참고)
+            # prediction 기록 생성, agent.execute() 호출, Portfolio 연결 등
+            
+            # --- (이후 작업에서 이 부분을 구체화합니다) ---
 
 
     # ========================================================
