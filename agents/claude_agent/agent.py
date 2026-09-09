@@ -46,8 +46,9 @@ class ClaudeAgent(BaseTradingAgent):
 
             return data
 
-        except json.JSONDecodeError:
-            logger.error("Failed to parse Claude response as JSON.")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Claude response as JSON. Error: {e}")
+            logger.error(f"Raw response text: {response_text}")
             return None
         except Exception as e:
             logger.error(f"Unexpected error parsing Claude response: {e}")
