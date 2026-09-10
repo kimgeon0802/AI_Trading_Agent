@@ -1,42 +1,19 @@
-import unittest
-from agents.gemini_agent.agent import GeminiMockAgent
-from agents.base_agent import BaseTradingAgent
+import pytest
+from unittest.mock import MagicMock
+from agents.gemini_agent.agent import GeminiAgent
+import os
 
-class TestGeminiAgent(unittest.TestCase):
-    def setUp(self):
-        self.agent = GeminiMockAgent()
-        self.sample_market_data = {
-            "market_summary": {"condition": "bullish"},
-            "macro_data": {},
-            "portfolio": {},
-            "news": [],
-            "technical_indicators": {}
-        }
+def test_gemini_agent_init():
+    os.environ["USE_MOCK_AI"] = "true"
+    agent = GeminiAgent()
+    assert agent.client is None
 
-    def test_inheritance(self):
-        self.assertIsInstance(self.agent, BaseTradingAgent)
-
-    def test_make_decision(self):
-        decision = self.agent.make_decision(self.sample_market_data)
-        
-        self.assertIn("decision", decision)
-        self.assertIn("confidence", decision)
-        self.assertIn("reasoning", decision)
-        self.assertIn("risks", decision)
-        self.assertIn("expected_result", decision)
-        
-        self.assertIn(decision["decision"], ["BUY", "SELL", "HOLD"])
-        self.assertIsInstance(decision["confidence"], float)
-
-    def test_bullish_logic(self):
-        data = {"market_summary": {"condition": "bullish"}}
-        decision = self.agent.make_decision(data)
-        self.assertEqual(decision["decision"], "BUY")
-
-    def test_bearish_logic(self):
-        data = {"market_summary": {"condition": "bearish"}}
-        decision = self.agent.make_decision(data)
-        self.assertEqual(decision["decision"], "SELL")
-
-if __name__ == '__main__':
-    unittest.main()
+def test_gemini_agent_make_decision_mock():
+    os.environ["USE_MOCK_AI"] = "true"
+    agent = GeminiAgent()
+    market_data = {"name": "SK하이닉스"}
+    decision = agent.make_decision(market_data)
+    
+    assert decision is not None
+    assert "decision" in decision
+    assert decision["decision"] in ["BUY", "SELL", "HOLD"]

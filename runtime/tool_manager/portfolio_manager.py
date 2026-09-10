@@ -1,12 +1,28 @@
 import logging
 from datetime import datetime
+from typing import List, Dict, Any
+from runtime.tool_manager.position_sizer import PositionSizer
 
 logger = logging.getLogger("PortfolioManager")
 
 class PortfolioManager:
     def __init__(self, db_manager):
         self.db = db_manager
+        self.sizer = PositionSizer()
         self.initial_cash = 10000000  # 10,000,000 KRW
+
+    def rebalance_portfolio(self, buy_candidates: List[Dict[str, Any]]):
+        """
+        Consensus 후 최종 후보들에 대해 리밸런싱 수행
+        """
+        portfolio = self.db.get_portfolio()
+        holdings = self.db.get_holdings()
+
+        target_amounts = self.sizer.calculate_target_positions(buy_candidates, portfolio, holdings)
+
+        # 실제 매수/매도 로직 호출 (단계적으로 구현)
+        logger.info(f"Rebalancing portfolio with target amounts: {target_amounts}")
+        return target_amounts
 
     def ensure_initial_portfolio(self):
         portfolio = self.db.get_portfolio()

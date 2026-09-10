@@ -7,6 +7,7 @@ from datetime import datetime
 from market.pipeline import MarketPipeline
 from market.market_data_adapter import MarketDataAdapter
 from agents.multi_ai.orchestrator import MultiAIOrchestrator
+from runtime.tool_manager.refinement_engine import RefinementEngine
 
 from runtime.tool_manager.db_manager import DatabaseManager
 from runtime.tool_manager.portfolio_manager import PortfolioManager
@@ -70,6 +71,7 @@ class RuntimeExecutor:
         )
         
         self.market_pipeline = MarketPipeline()
+        self.refiner = RefinementEngine(target_min=10, target_max=15)
         self.market_data_adapter = MarketDataAdapter()
 
         # ----------------------------------------------------
@@ -145,228 +147,50 @@ class RuntimeExecutor:
 
     async def _run_mock_cycle(self, market_condition=None):
         """
-        기존 MOCK 테스트 파이프라인
+        신규 Gemini 파이프라인 기반 MOCK 테스트 파이프라인
         """
-
-        # ----------------------------------------------------
-        # 0. Simulate Market Movement
-        # ----------------------------------------------------
-
         if market_condition:
-            self.market_simulator.set_condition(
-                market_condition
-            )
-
+            self.market_simulator.set_condition(market_condition)
         self.market_simulator.simulate_step()
-
-        # ----------------------------------------------------
-        # Target Ticker
-        # ----------------------------------------------------
-
-        target_ticker = "005930"
-
-        current_price = self.market_simulator.get_price(
-            target_ticker
+        
+        # 1. Screening & Refinement
+        candidates_df = self.market_pipeline.run()
+        refined_df = self.refiner.refine(candidates_df)
+        
+        # 2. Convert to JSON/Dict
+        portfolio_state = self.portfolio_manager.get_current_state()
+        self.macro_manager.fetch_and_save_macro_data()
+        macro_data = self.macro_manager.get_current_macro_indicators()
+        
+        market_data_list = self.market_data_adapter.convert_candidates(
+            refined_df,
+            portfolio_state=portfolio_state,
+            macro_data=macro_data
         )
-
-        # ----------------------------------------------------
-        # 1. Collect Market Data
-        # ----------------------------------------------------
-
-        market_data = self._collect_data(
-            target_ticker,
-            current_price
-        )
-
-        logger.info(
-            f"Requesting decision from AI agent "
-            f"for {target_ticker} "
-            f"at price {current_price}..."
-        )
-
-        # ----------------------------------------------------
-        # 2. Create Prediction Record
-        #
-        # One prediction_id is used as the traceability key
-        # for GPT / Claude / Consensus / Trade / Evaluation.
-        # ----------------------------------------------------
-
-        timestamp = datetime.now().isoformat()
-
-        prediction_id = self.db.save_prediction(
-            target_ticker,
-            "PENDING",
-            0.0,
-            0.0,
-            "Multi-AI Pending",
-            timestamp
-        )
-
-        logger.info(
-            f"Created prediction record: "
-            f"prediction_id={prediction_id}"
-        )
-
-        # ----------------------------------------------------
-        # 3. Execute Multi-AI Pipeline
-        # ----------------------------------------------------
-
-        decision_result = None
-
-        try:
-
-            decision_result = self.agent.execute(
-                market_data,
-                prediction_id
+        
+        # 3. Iterate over refined candidates
+        for market_data in market_data_list:
+            target_ticker = market_data["ticker"]
+            
+            logger.info(f"Executing Multi-AI Pipeline for {target_ticker}")
+            
+            # Prediction ID (Traceability)
+            timestamp = datetime.now().isoformat()
+            prediction_id = self.db.save_prediction(
+                target_ticker, "PENDING", 0.0, 0.0, "Multi-AI Pending", timestamp
             )
-
-        except Exception as e:
-
-            logger.exception(
-                f"Multi-AI execution failed: {e}"
-            )
-
-            decision_result = None
-
-        # ----------------------------------------------------
-        # 4. Validate / Save Final Decision
-        # ----------------------------------------------------
-
-        if decision_result:
-
-            decision = decision_result.get(
-                "decision",
-                "HOLD"
-            )
-
-            confidence = decision_result.get(
-                "confidence",
-                0.0
-            )
-
-            reasoning = decision_result.get(
-                "reasoning",
-                "No reasoning provided"
-            )
-
-            risks = decision_result.get(
-                "risks",
-                []
-            )
-
-            self.db.execute_query(
-                """
-                UPDATE predictions
-                SET prediction = ?,
-                    confidence = ?,
-                    reasoning = ?
-                WHERE id = ?
-                """,
-                (
-                    decision,
-                    confidence,
-                    str(reasoning),
-                    prediction_id
+            
+            # Execute
+            decision_result = self.agent.execute(market_data, prediction_id)
+            
+            # Portfolio execution logic (holding over from original)
+            current_price = market_data["market_data"]["close"]
+            
+            if decision_result:
+                decision = decision_result.get("decision", "HOLD")
+                self.portfolio_manager.execute_decision(
+                    target_ticker, decision_result, current_price, prediction_id=prediction_id
                 )
-            )
-
-            logger.info(
-                f"AI Decision for {target_ticker}: "
-                f"{decision} "
-                f"(Confidence: {confidence})"
-            )
-
-            # ------------------------------------------------
-            # 5. Save Reasoning
-            # ------------------------------------------------
-
-            self.db.save_reasoning(
-                decision,
-                reasoning,
-                risks,
-                confidence,
-                datetime.now().isoformat(),
-                prediction_id=prediction_id
-            )
-
-            # ------------------------------------------------
-            # 6. Execute Virtual Portfolio Decision
-            # ------------------------------------------------
-
-            self.portfolio_manager.execute_decision(
-                target_ticker,
-                decision_result,
-                current_price,
-                prediction_id=prediction_id
-            )
-
-        else:
-
-            logger.error(
-                "Failed to get valid decision from AI. "
-                "Falling back to HOLD."
-            )
-
-            decision_result = {
-                "decision": "HOLD",
-                "confidence": 0.0,
-                "reasoning": (
-                    "Failed to get valid decision "
-                    "from AI"
-                ),
-                "risks": [
-                    "AI decision unavailable"
-                ]
-            }
-
-            self.db.execute_query(
-                """
-                UPDATE predictions
-                SET prediction = ?,
-                    confidence = ?,
-                    reasoning = ?
-                WHERE id = ?
-                """,
-                (
-                    "HOLD",
-                    0.0,
-                    "Failed to get valid decision from AI",
-                    prediction_id
-                )
-            )
-
-            self.db.save_reasoning(
-                "HOLD",
-                decision_result["reasoning"],
-                decision_result["risks"],
-                0.0,
-                datetime.now().isoformat(),
-                prediction_id=prediction_id
-            )
-
-            self.portfolio_manager.execute_decision(
-                target_ticker,
-                decision_result,
-                current_price,
-                prediction_id=prediction_id
-            )
-
-        # ----------------------------------------------------
-        # 7. Run Evaluation
-        # ----------------------------------------------------
-
-        evaluation_market_data = (
-            self.market_simulator.get_all_prices()
-        )
-
-        self.evaluation_manager.run_evaluation(
-            evaluation_market_data
-        )
-
-        logger.info(
-            f"Trading cycle completed "
-            f"for prediction_id={prediction_id}"
-        )
 
     async def _run_adapter_validation(self):
         """

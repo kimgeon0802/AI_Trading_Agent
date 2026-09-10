@@ -1,8 +1,6 @@
 from enum import Enum
-from openai import OpenAIError, AuthenticationError, RateLimitError, APITimeoutError, APIConnectionError, InternalServerError, BadRequestError
+from openai import OpenAIError, APIStatusError, AuthenticationError, RateLimitError, APITimeoutError, APIConnectionError, InternalServerError, BadRequestError
 import anthropic
-# Anthropic exceptions might need specific import depending on version
-# In 1.4.0, they are under anthropic.BadRequestError etc.
 
 class APIStatus(Enum):
     SUCCESS = "SUCCESS"
@@ -10,6 +8,9 @@ class APIStatus(Enum):
     CREDIT_EXHAUSTED = "CREDIT_EXHAUSTED"
     CONFIGURATION_ERROR = "CONFIGURATION_ERROR"
     API_ERROR = "API_ERROR"
+    # 추가된 Web Search 관련
+    PARSE_ERROR = "PARSE_ERROR"
+    TIMEOUT = "TIMEOUT"
 
 def classify_error(e):
     error_str = str(e).lower()
@@ -31,7 +32,10 @@ def classify_error(e):
         return APIStatus.RETRYABLE_ERROR
         
     # Timeout/Connection/Server (Retryable)
-    if isinstance(e, (APITimeoutError, APIConnectionError, anthropic.APIConnectionError, InternalServerError, anthropic.InternalServerError)):
+    if isinstance(e, APITimeoutError):
+        return APIStatus.TIMEOUT
+        
+    if isinstance(e, (APIConnectionError, anthropic.APIConnectionError, InternalServerError, anthropic.InternalServerError)):
         return APIStatus.RETRYABLE_ERROR
     
     # Fallback
