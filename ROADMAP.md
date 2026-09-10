@@ -72,11 +72,59 @@
 
 ---
 
-# 2026-09-09 작업 종료
-- Adapter Validation: COMPLETE
-- Market Data Fallback: COMPLETE
-- ECOS Macro Data: VERIFIED
-- GPT Input Validation: PASS
-- Claude API: NOT TESTED
-- OpenAI API: NOT TESTED
-- Next Step: Real GPT API Single-Stock Test
+# Phase A — RAG Knowledge Base & Claude Integration [완료 - 2026-09-09]
+
+## 완료 범위
+- RAG Knowledge Base 설계 및 인벤토리 완료
+- 7개 카테고리 Knowledge Base 구축 완료
+    - Fundamental, Investors, Macro, Psychology, Risk, Strategy, Technical
+- 총 31개 Markdown Knowledge 문서 확보
+- Anti-Hallucination Rules 적용 및 검증 완료
+- FAISS Vector Store 구축 완료
+- 193개 chunks / 31개 source 정상 확인
+- RAG Retrieval 정상 동작 확인 및 카테고리/Cross-category Retrieval 검증 완료
+- Claude-only RAG architecture 적용 (GPTAgent는 RAG 영향 없이 기존 구조 유지)
+- ClaudeAgent의 RAG Query 생성 및 Retrieval 연동 완료
+- Retrieved Knowledge가 Claude Prompt Context에 주입되는 구조 확인 및 RAG failure graceful degradation 확인
+- 실제 Claude + RAG E2E 동작 검증 및 GPT + Claude + Consensus 기존 파이프라인 regression 검증 완료
+
+## 검증 완료 항목
+- STEP 1~6, R1~R5 PASS
+- Phase A A1~A3-6 전체 완료 및 최종 검증 PASS WITH WARNINGS
+- Recovery 기록: 손상된 27개 Markdown 문서 복구 및 무결성 검증 완료
+
+## Phase A 최종 의미
+- `Markdown Knowledge Base → FAISS Vector Store → RAG Retrieval → ClaudeAgent → Claude Prompt Context Injection → Claude Analysis` 전체 파이프라인 연결 및 Claude의 RAG 활용 검증 완료.
+
+**Phase A — COMPLETE**
+
+---
+
+---
+
+# Phase B — GPT Web Search Integration [진행 예정]
+
+목표: GPTAgent가 실시간 데이터(최신 뉴스, 공시 등)를 검색하고 분석에 활용할 수 있도록 Web Search Pipeline 구축 및 검증.
+
+## 주요 설계 방향
+- **Claude RAG와의 역할 분리:** Claude는 RAG를 통해 고도화된 도메인/장기 지식 활용, GPT는 Web Search를 통해 최신 외부 정보 활용.
+- **GPTAgent 전용 Web Search:** GPTAgent에 검색 기능 통합, Claude RAG와는 독립적인 파이프라인 유지.
+- **기존 구조 보호:** 기존 Decision JSON 계약, Consensus 로직, Market Pipeline 수정 금지.
+- **비용/효율성 관리:** 검색 Query 최적화 및 단계적 검증(Mock → 1종목 → 다수 종목).
+- **에러 처리:** 검색 실패 시 GPT가 기존 Market Data 기반으로 분석을 진행하는 Graceful Degradation 구현.
+
+## 구현 단계
+- STEP B1: GPT 구조(OpenAIClient, GPTAgent) 및 API 호환성 분석
+- STEP B2: Web Search Client/Service 설계 및 Abstraction
+- STEP B3: Candidate 기반 Query Builder 설계
+- STEP B4: Search Result 정규화 및 GPT Prompt 주입 구현
+- STEP B5: 에러 핸들링 및 실패 대응 구현
+- STEP B6: GPT Decision 계약 무결성 검증 및 전체 파이프라인 regression 테스트
+
+## 검증 기준
+- Web Search 호출 성공 및 최신 정보 검색/parsing 정확도
+- 기존 Decision 구조 유지 및 RAG/Claude 영향 없음
+- 점진적 검증(1/3/5/10 stocks)을 통한 Multi-stock 안정성 확인
+- API Rate limit 및 에러 상황 대응 테스트 완료
+
+---
