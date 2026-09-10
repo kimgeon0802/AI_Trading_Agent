@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import List, Optional
 from agents.base_agent import BaseTradingAgent
 from runtime.tool_manager.anthropic_client import AnthropicClient
 from rag.rag_engine import RAGEngine
@@ -76,7 +77,7 @@ class ClaudeAgent(BaseTradingAgent):
             )
         return "\n\n".join(context_parts)
 
-    def make_decision(self, market_data: dict, gpt_result: dict) -> dict:
+    def make_decision(self, market_data: dict, gpt_result: dict, search_results: Optional[List] = None) -> dict:
         """
         Analyze the given market data and make a trading decision using Claude API.
         """
@@ -90,11 +91,19 @@ class ClaudeAgent(BaseTradingAgent):
             except Exception as e:
                 logger.error(f"[RAG] Retrieval failed: {e}")
         
+        # Web Search Context 통합
+        search_context = ""
+        if search_results:
+            search_context = "\n\n[Web Search Results]\n"
+            for res in search_results:
+                search_context += f"- Title: {res.title}, URL: {res.url}\n"
+        
         user_prompt = (
             f"Original Market Data: {json.dumps(market_data)}\n\n"
-            f"GPT's Decision: {json.dumps(gpt_result)}\n\n"
-            f"{rag_context}\n\n"
-            "Evaluate GPT's decision, logic, and risk assessment based on market data, GPT analysis, and relevant knowledge. "
+            f"Gemini's Decision: {json.dumps(gpt_result)}\n\n"
+            f"{rag_context}\n"
+            f"{search_context}\n\n"
+            "Evaluate Gemini's decision, logic, and risk assessment based on market data, Gemini analysis, web search results, and relevant knowledge. "
             "Return the evaluation in structured JSON format."
         )
 

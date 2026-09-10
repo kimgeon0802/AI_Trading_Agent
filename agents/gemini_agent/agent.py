@@ -73,5 +73,6 @@ class GeminiAgent(BaseTradingAgent):
             "confidence": 0.5,
             "reasoning": ["Mock reasoning based on market data"],
             "risks": ["Mock risks"],
-            "expected_result": "Mock outcome"
+            "expected_result": "Mock outcome",
+            "selected_candidates": [market_data.get("ticker", "000660")]
         }

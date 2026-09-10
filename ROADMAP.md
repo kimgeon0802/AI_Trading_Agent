@@ -128,3 +128,210 @@
 - API Rate limit 및 에러 상황 대응 테스트 완료
 
 ---
+
+# 2026-09-10 작업 기록
+
+## 1. 오늘 작업 내용
+
+### 1-1. Gemini 1차 분석 구조 정리
+- Gemini 3.6 Flash를 1차 분석 모델로 사용하도록 구조를 정리했습니다.
+- Google Search Grounding은 제거했습니다.
+- 현재 Gemini 역할:
+  - 1차 투자 분석 수행
+  - Refinement 후보 중 최대 10개 후보 선정
+- Gemini 비대상 역할:
+  - 투자금 배분 ❌, Position Sizing ❌, 실제 매매 ❌ (해당 역할들은 담당하지 않음)
+- 실제 최신 웹 정보 검색은 Tavily가 담당합니다.
+
+### 1-2. Tavily SearchProvider 구현
+- 신규 파일 생성:
+  - `runtime/tool_manager/search_provider.py`
+  - `runtime/tool_manager/tavily_search_provider.py`
+- 구조:
+  ```text
+  SearchProvider (Abstract)
+          │
+          └── TavilySearchProvider
+                  │
+                  ↓
+               Tavily API
+                  │
+                  ↓
+            SearchResult
+  ```
+- 기존 `SearchResult` contract를 재사용하여 검색 결과의 표준화를 일관되게 유지했습니다.
+- Tavily SDK (`tavily-python`)를 디펜던시에 추가했습니다.
+
+### 1-3. Tavily Error Handling 구현
+- 기존 `classify_error`를 활용하여 Tavily API 오류를 체계적으로 분류하고 로깅하도록 구현했습니다.
+- 고려된 오류 상황: API Key 오류, 429 Rate Limit, Timeout, Network Error, Empty Result, API Response Error.
+- API Key는 코드 내 하드코딩하지 않고 환경변수 `TAVILY_API_KEY`를 사용하도록 설계했습니다.
+
+### 1-4. Gemini → Tavily → Claude Mock 통합
+- 다음 파이프라인을 Mock 환경에서 성공적으로 연결했습니다:
+  ```text
+  Screening
+      ↓
+  Refinement
+      ↓
+  MarketDataAdapter
+      ↓
+  Gemini
+      ↓
+  selected_candidates
+      ↓
+  Tavily SearchProvider
+      ↓
+  SearchResult
+      ↓
+  Claude
+      ↓
+  Consensus
+  ```
+- 핵심 역할 분리:
+  - **Gemini**: 1차 분석 + 최대 10개 후보 선정
+  - **Tavily**: 최신 웹 정보 검색
+  - **Claude**: Gemini 결과 + Tavily 결과 + RAG 기반 2차 심층 분석
+  - **Consensus**: 최종 판단 및 합의
+  - **PositionSizer**: 투자 비중 / 투자금 / 수량 결정
+  - **PortfolioManager**: 가상 매매 실행
+
+### 1-5. Gemini Mock 결과 확장
+- Gemini Mock 결과에 `selected_candidates` 필드를 추가하여 후속 Tavily 검색 대상과 자연스럽게 연결했습니다.
+- Gemini가 선정한 후보는 최대 10개로 제한하는 구조를 채택했습니다.
+- 중요한 후보 흐름:
+  ```text
+  Screening 50
+      ↓
+  Refinement 10~15
+      ↓
+  Gemini
+      ↓
+  최대 10개 선정
+      ↓
+  Tavily 검색
+  ```
+  전체 KOSPI/KOSDAQ 종목에 대해 불필요하게 검색하지 않는 고효율 구조입니다.
+
+### 1-6. Claude 연동
+- `agents/claude_agent/agent.py`의 `make_decision` 메서드에 Tavily 검색 결과를 전달할 수 있도록 보완했습니다.
+- Claude가 `Gemini 1차 분석 + Tavily 최신 검색 결과 + 기존 RAG` 세 가지 차원의 정보를 모두 활용하여 심층 결정을 도출할 수 있는 구조입니다.
+- Claude RAG와 Consensus 구조는 기존 contract를 안정적으로 유지했습니다.
+
+---
+
+## 2. 오늘 테스트 결과
+
+### Gemini
+- Block 테스트: **PASS**
+- Mock 테스트: **PASS**
+- *주석: Gemini 실제 API는 현재 quota 문제로 추가 실행하지 않았으며, Google Search Grounding은 성공적으로 제거된 상태입니다.*
+
+### Tavily
+- Block 테스트: **PASS**
+- Mock 테스트: **PASS**
+- Real 단일 종목 테스트: **PASS**
+  - 테스트 대상 종목: `000660 / SK하이닉스`
+  - 검색 Query: `SK하이닉스 최신 뉴스`
+  - 실제 Tavily API 호출 횟수: **1회**
+  - 검색 결과 개수: **5개**
+  - `SearchResult` contract 변환: **PASS**
+  - 검증된 주요 필드: `title`, `url`, `content`, `published_date`, `score`
+
+---
+
+## 3. API 호출량 기록
+- **Gemini API**: 0회
+- **Tavily API**: 1회
+- **Claude API**: 0회
+- **OpenAI API**: 0회
+- *Mock 테스트 내 모든 외부 API 호출 횟수는 **0회**임을 기록합니다.*
+
+---
+
+## 4. 현재 프로젝트 상태
+
+### 파이프라인 구조
+```text
+Screening
+    ↓
+Refinement
+    ↓
+MarketDataAdapter
+    ↓
+Gemini
+    │
+    └── selected_candidates (최대 10)
+             ↓
+       SearchProvider
+             ↓
+       TavilySearchProvider
+             ↓
+        SearchResult
+             ↓
+           Claude
+             ↓
+         Consensus
+             ↓
+       PositionSizer
+             ↓
+      PortfolioManager
+```
+
+### 상세 상태 요약
+- **Gemini 1차 분석**: 구현 완료 / Mock 검증 완료 / Real API 검증 대기
+- **Tavily SearchProvider**: 구현 완료 / Block 검증 완료 / Mock 검증 완료 / Real 단일 검색 검증 완료
+- **Gemini → Tavily → Claude**: Mock 통합 검증 완료
+- **전체 Real E2E**: 아직 수행하지 않음
+
+---
+
+## 5. 내일 작업 기록 (다음 단계 계획)
+
+### 1차 목표
+- **Gemini → Tavily → Claude 실제 파이프라인 연동 검증**
+
+### 실행 예정 순서
+1. Gemini Real API 상태 확인 및 활성화 여부 점검
+2. Gemini 1차 분석 결과의 정확성 확인
+3. Gemini 결과에서 도출된 `selected_candidates` 유효성 확인
+4. 선정된 후보(최대 10개)에 대해서만 Tavily 검색 수행
+5. Tavily 검색 결과 내용 및 표준화 변환 상태 확인
+6. Gemini 1차 분석 결과 및 Tavily 최신 검색 결과를 Claude에 안정적으로 전달
+7. Claude 2차 심층 RAG 분석 결과 확인
+8. Consensus 모듈과의 정상 연결 및 합의 도출 프로세스 확인
+9. 필요한 경우 단일 종목 Real E2E 검증 우선 수행
+10. 이후 Multi-stock Real 테스트 단계적 검토
+
+### API 테스트 관리 원칙
+- Real API 테스트는 **반드시 호출 횟수를 엄격히 제한**하며, 실패 시 무한 루프나 과다 청구를 방지하기 위해 **자동 retry를 수행하지 않습니다.**
+- OpenAI API는 현재 아키텍처에서 사용하지 않는 구조이며, 향후 이번 파이프라인 검증 과정에서도 **호출하지 않는 원칙**을 유지합니다.
+
+---
+
+## 6. 다음 단계의 목표 아키텍처
+
+```text
+Screening 50
+ ↓
+Refinement 10~15
+ ↓
+Adapter
+ ↓
+Gemini 1차 분석
+ ↓
+최대 10개 후보
+ ↓
+Tavily 최신 정보 검색
+ ↓
+Claude 2차 심층 분석 + RAG
+ ↓
+Consensus
+ ↓
+PositionSizer
+ ↓
+PortfolioManager
+```
+
+- **핵심 아키텍처 원칙**: Gemini가 투자금을 직접 배분하거나 `PositionSizer` 역할을 가로채지 않고, 철저히 1차 후보 선별 및 기본 분석 전문가로서 동작하도록 역할을 선명하게 분리·유지합니다.
+

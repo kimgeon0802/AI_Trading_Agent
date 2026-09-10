@@ -3,6 +3,8 @@ from agents.gemini_agent.agent import GeminiAgent
 # from agents.gpt_agent.agent import GPTAgent
 from agents.claude_agent.agent import ClaudeAgent
 from agents.multi_ai.consensus_manager import ConsensusManager
+from runtime.tool_manager.tavily_search_provider import TavilySearchProvider
+from runtime.tool_manager.api_error_handler import APIStatus
 
 logger = logging.getLogger("MultiAIOrchestrator")
 
@@ -12,31 +14,39 @@ class MultiAIOrchestrator:
         self.gemini_agent = GeminiAgent()
         self.claude_agent = ClaudeAgent()
         self.consensus_manager = ConsensusManager()
+        self.tavily_provider = TavilySearchProvider()
         self.db = db_manager
 
     def execute(self, market_data: dict, prediction_id: int) -> dict:
         """
-        Orchestrate sequential decision making: Gemini -> Claude -> Consensus.
+        Orchestrate sequential decision making: Gemini -> Tavily -> Claude -> Consensus.
         """
         timestamp = market_data["timestamp"]
         
         # 1. Execute Gemini (Analyst)
         try:
-            # gpt_result = self.gpt_agent.make_decision(market_data)
             gemini_result = self.gemini_agent.make_decision(market_data)
         except Exception as e:
             logger.error(f"Error executing GeminiAgent: {e}")
             gemini_result = None
         
-        # Save Gemini decision (사용자 DB 스키마에 따라 'gpt' 레이블 유지 또는 변경)
-        self._save_agent_result(prediction_id, timestamp, "gpt", gemini_result)
+        # Save Gemini decision
+        self._save_agent_result(prediction_id, timestamp, "gemini", gemini_result)
             
-        # 2. Execute Claude (Evaluator)
+        # 2. Execute Tavily Search (Search Provider)
+        search_results = []
+        if gemini_result and "selected_candidates" in gemini_result:
+            for ticker in gemini_result["selected_candidates"]:
+                status, results = self.tavily_provider.search(f"{ticker} 최신 뉴스")
+                if status == APIStatus.SUCCESS:
+                    search_results.extend(results)
+        
+        # 3. Execute Claude (Evaluator)
         claude_result = None
         if gemini_result:
             try:
-                # Claude receives Gemini result for evaluation
-                claude_result = self.claude_agent.make_decision(market_data, gemini_result)
+                # Claude receives Gemini result AND Search results for evaluation
+                claude_result = self.claude_agent.make_decision(market_data, gemini_result, search_results=search_results)
             except Exception as e:
                 logger.error(f"Error executing ClaudeAgent: {e}")
         else:
@@ -45,10 +55,10 @@ class MultiAIOrchestrator:
         # Save Claude evaluation
         self._save_agent_result(prediction_id, timestamp, "claude", claude_result)
             
-        # 3. Consensus (Validator)
+        # 4. Consensus (Validator)
         final_decision = self.consensus_manager.get_consensus(gemini_result, claude_result)
         
-        # 4. Construct Final Result
+        # 5. Construct Final Result
         final_result = {
             "decision": final_decision["decision"],
             "confidence": final_decision["confidence"],
