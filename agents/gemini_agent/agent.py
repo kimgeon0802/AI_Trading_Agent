@@ -14,7 +14,7 @@ logger = logging.getLogger("GeminiAgent")
 
 class GeminiAgent(BaseTradingAgent):
     def __init__(self, system_prompt_path="prompts/system_prompt.md", decision_prompt_path="prompts/decision_prompt.md"):
-        self.model_name = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.system_prompt = self._load_prompt(system_prompt_path)
         self.decision_prompt = self._load_prompt(decision_prompt_path)
@@ -35,7 +35,6 @@ class GeminiAgent(BaseTradingAgent):
         """
         Backward compatibility: Analyze single ticker data using batch logic.
         """
-        # Pass the market_data dict in a list to execute_batch
         batch_result = self.execute_batch([market_data])
         analyses = batch_result.get("analyses", [])
         return analyses[0] if analyses else None
@@ -52,7 +51,6 @@ class GeminiAgent(BaseTradingAgent):
 
         # 2. Mock 모드 처리
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
-            # Mock 데이터 생성 (분석 결과 + 선정 종목)
             return {
                 "analyses": [self._get_single_analysis_mock(d) for d in market_data_list],
                 "selected_candidates": [{"ticker": d.get("ticker"), "priority": "HIGH", "reason": "Mock reason"} for d in market_data_list[:min(len(market_data_list), 2)]]
@@ -62,7 +60,8 @@ class GeminiAgent(BaseTradingAgent):
         try:
             config = types.GenerateContentConfig(
                 system_instruction=self.system_prompt,
-                response_mime_type="application/json"
+                response_mime_type="application/json",
+                tools=None # AFC 비활성화
             )
 
             response = self.client.models.generate_content(
@@ -79,6 +78,10 @@ class GeminiAgent(BaseTradingAgent):
             return data
 
         except Exception as e:
+            error_str = str(e).lower()
+            if "resource_exhausted" in error_str or "quota" in error_str:
+                logger.error(f"Gemini API Quota Exceeded (429): {e}")
+                return {"analyses": [], "selected_candidates": [], "error": "GEMINI_QUOTA_EXCEEDED"}
             logger.error(f"Gemini API Error: {e}")
             return {"analyses": [], "selected_candidates": []}
 

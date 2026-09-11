@@ -8,46 +8,45 @@ class ClaudeParser:
     @staticmethod
     def parse_response(response_text: str) -> Optional[Dict[str, Any]]:
         """
-        Claude 응답을 파싱하여 견고하게 JSON으로 추출하고 유효성 검증을 수행한다.
+        Claude 응답을 파싱하여 JSON으로 추출하고 유효성 검증을 수행합니다.
         """
         if not response_text:
             logger.error("Empty response text.")
             return None
 
-        # 1. 시도: 전체를 JSON으로 파싱
+        import re
+
+        # 1. 시도: 정규표현식으로 { ... } 블록 추출 (가장 바깥쪽 JSON 객체 시도)
+        # Markdown fence 내부에 있는 JSON을 우선적으로 찾습니다.
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(1))
+                if ClaudeParser._validate_schema(data):
+                    return data
+            except json.JSONDecodeError:
+                pass
+
+        # 2. 시도: 전체 텍스트에서 JSON 객체 시도
         try:
             data = json.loads(response_text)
             if ClaudeParser._validate_schema(data):
                 return data
         except json.JSONDecodeError:
             pass
-            
-        # 2. 시도: Fenced JSON 블록 추출
-        clean_text = response_text.replace("```json", "").replace("```", "").strip()
-        
-        # 3. 시도: { ... } 구조 추출
-        start = clean_text.find('{')
-        end = clean_text.rfind('}')
-        
+
+        # 3. 시도: 더 포괄적인 { } 추출 (Markdown 내부에 있지 않은 경우 등)
+        start = response_text.find('{')
+        end = response_text.rfind('}')
         if start != -1 and end != -1 and end > start:
-            json_str = clean_text[start : end + 1]
             try:
+                json_str = response_text[start : end + 1]
                 data = json.loads(json_str)
                 if ClaudeParser._validate_schema(data):
                     return data
             except json.JSONDecodeError:
                 pass
-            
-        # 4. 시도: 잘린 JSON 복구 시도 (마지막 } 추가)
-        if start != -1 and end == -1:
-            json_str = clean_text[start:] + '}'
-            try:
-                data = json.loads(json_str)
-                if ClaudeParser._validate_schema(data):
-                    return data
-            except json.JSONDecodeError:
-                pass
-                
+
         logger.error(f"Failed to parse Claude response. Text: {response_text[:100]}...")
         return None
 
