@@ -1,15 +1,15 @@
 import logging
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from runtime.tool_manager.position_sizer import PositionSizer
 
 logger = logging.getLogger("PortfolioManager")
 
 class PortfolioManager:
-    def __init__(self, db_manager):
+    def __init__(self, db_manager, initial_cash: float = 0.0):
         self.db = db_manager
         self.sizer = PositionSizer()
-        self.initial_cash = 10000000  # 10,000,000 KRW
+        self.initial_cash = initial_cash
 
     def rebalance_portfolio(self, buy_candidates: List[Dict[str, Any]]):
         """
@@ -24,11 +24,12 @@ class PortfolioManager:
         logger.info(f"Rebalancing portfolio with target amounts: {target_amounts}")
         return target_amounts
 
-    def ensure_initial_portfolio(self):
+    def ensure_initial_portfolio(self, initial_cash: Optional[float] = None):
         portfolio = self.db.get_portfolio()
         if not portfolio:
-            logger.info("Initializing portfolio with default values.")
-            self.db.update_portfolio(self.initial_cash, self.initial_cash, datetime.now().isoformat())
+            cash = initial_cash if initial_cash is not None else self.initial_cash
+            logger.info(f"Initializing portfolio with cash: {cash}")
+            self.db.update_portfolio(cash, cash, datetime.now().isoformat())
 
     def get_current_state(self):
         portfolio = self.db.get_portfolio()
@@ -58,7 +59,7 @@ class PortfolioManager:
         self._update_total_asset(current_price, timestamp)
 
     def _handle_buy(self, ticker, available_cash, price, confidence, timestamp, prediction_id=None):
-        # MVP logic: use 20% of cash for BUY
+        # MVP logic: use 20% of cash for BUY (To be replaced by PositionSizer output)
         investment_amount = available_cash * 0.2
         quantity = int(investment_amount // price)
         

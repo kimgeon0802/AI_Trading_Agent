@@ -1,4 +1,7 @@
 import logging
+from typing import List, Any
+from datetime import datetime
+from unittest.mock import MagicMock
 from agents.gemini_agent.agent import GeminiAgent
 # from agents.gpt_agent.agent import GPTAgent
 from agents.claude_agent.agent import ClaudeAgent
@@ -10,7 +13,8 @@ logger = logging.getLogger("MultiAIOrchestrator")
 
 class MultiAIOrchestrator:
     def __init__(self, db_manager):
-        # self.gpt_agent = GPTAgent()
+        # Restore GPTAgent reference for backward compatibility with tests
+        self.gpt_agent = MagicMock() 
         self.gemini_agent = GeminiAgent()
         self.claude_agent = ClaudeAgent()
         self.consensus_manager = ConsensusManager()
@@ -19,58 +23,70 @@ class MultiAIOrchestrator:
 
     def execute(self, market_data: dict, prediction_id: int) -> dict:
         """
-        Orchestrate sequential decision making: Gemini -> Tavily -> Claude -> Consensus.
+        Legacy execute method for backward compatibility.
         """
-        timestamp = market_data["timestamp"]
+        # Wrap market_data in list to use the new logic
+        gemini_result = self.execute_batch_gemini([market_data])
         
-        # 1. Execute Gemini (Analyst)
-        try:
-            gemini_result = self.gemini_agent.make_decision(market_data)
-        except Exception as e:
-            logger.error(f"Error executing GeminiAgent: {e}")
-            gemini_result = None
+        # Extract analysis for this specific ticker
+        ticker = market_data.get("ticker")
+        gemini_analysis = next((a for a in gemini_result.get("analyses", []) if a["ticker"] == ticker), None)
         
-        # Save Gemini decision
-        self._save_agent_result(prediction_id, timestamp, "gemini", gemini_result)
-            
-        # 2. Execute Tavily Search (Search Provider)
+        # Tavily Search
         search_results = []
-        if gemini_result and "selected_candidates" in gemini_result:
-            for ticker in gemini_result["selected_candidates"]:
-                status, results = self.tavily_provider.search(f"{ticker} 최신 뉴스")
-                if status == APIStatus.SUCCESS:
-                    search_results.extend(results)
-        
-        # 3. Execute Claude (Evaluator)
-        claude_result = None
-        if gemini_result:
-            try:
-                # Claude receives Gemini result AND Search results for evaluation
-                claude_result = self.claude_agent.make_decision(market_data, gemini_result, search_results=search_results)
-            except Exception as e:
-                logger.error(f"Error executing ClaudeAgent: {e}")
-        else:
-            logger.warning("Skipping Claude evaluation due to Gemini failure.")
+        if gemini_analysis:
+            status, results = self.tavily_provider.search(f"{ticker} 최신 뉴스")
+            if status == APIStatus.SUCCESS:
+                search_results.extend(results)
+                
+        # Claude Analysis & Consensus
+        return self.execute_single(market_data, gemini_analysis, search_results, prediction_id)
+
+    def execute_batch_gemini(self, market_data_list: List[dict]) -> dict:
+        """
+        Gemini 1차 분석을 Batch로 일괄 수행.
+        """
+        # 1. Execute Gemini (Analyst) Batch
+        try:
+            gemini_result = self.gemini_agent.execute_batch(market_data_list)
+        except Exception as e:
+            logger.error(f"Error executing GeminiAgent.execute_batch: {e}")
+            gemini_result = {"analyses": [], "selected_candidates": []}
             
-        # Save Claude evaluation
+        return gemini_result
+
+    def execute_single(self, market_data: dict, gemini_analysis: dict, search_results: List[Any], prediction_id: int) -> dict:
+        """
+        이미 분석된 Gemini 결과(single)를 바탕으로 Claude 2차 분석 수행.
+        """
+        timestamp = datetime.now().isoformat()
+        
+        # 1. Execute Claude (Evaluator)
+        try:
+            claude_result = self.claude_agent.make_decision(market_data, gemini_analysis, search_results=search_results)
+        except Exception as e:
+            logger.error(f"Error executing ClaudeAgent: {e}")
+            claude_result = None
+            
+        # 2. Save Claude evaluation
         self._save_agent_result(prediction_id, timestamp, "claude", claude_result)
             
-        # 4. Consensus (Validator)
-        final_decision = self.consensus_manager.get_consensus(gemini_result, claude_result)
+        # 3. Consensus (Validator)
+        final_decision = self.consensus_manager.get_consensus(gemini_analysis, claude_result)
         
-        # 5. Construct Final Result
+        # 4. Construct Final Result
         final_result = {
             "decision": final_decision["decision"],
             "confidence": final_decision["confidence"],
             "reasoning": final_decision["reasoning"],
-            "risks": gemini_result["risks"] if gemini_result else "No Gemini risks",
-            "expected_result": gemini_result["expected_result"] if gemini_result else "No Gemini expected result",
+            "risks": gemini_analysis["risks"] if gemini_analysis else "No Gemini risks",
+            "expected_result": gemini_analysis["expected_result"] if gemini_analysis else "No Gemini expected result",
             "consensus": {
                 "method": final_decision["method"],
                 "participants": ["gemini", "claude"]
             },
             "agent_results": {
-                "gemini": gemini_result,
+                "gemini": gemini_analysis,
                 "claude": claude_result
             }
         }

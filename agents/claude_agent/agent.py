@@ -4,6 +4,7 @@ from typing import List, Optional
 from agents.base_agent import BaseTradingAgent
 from runtime.tool_manager.anthropic_client import AnthropicClient
 from rag.rag_engine import RAGEngine
+from agents.claude_agent.parser import ClaudeParser
 
 logger = logging.getLogger("ClaudeAgent")
 
@@ -12,12 +13,12 @@ class ClaudeAgent(BaseTradingAgent):
         self.client = AnthropicClient()
         self.system_prompt = (
             "You are a professional financial trading assistant and risk validator. "
-            "Your task is to evaluate the trading decision made by another AI (GPT). "
-            "You must analyze the original market data and the GPT's analysis, then "
+            "Your task is to evaluate the trading decision made by another AI (Gemini). "
+            "You must analyze the original market data and the Gemini's analysis, then "
             "provide an evaluation in JSON format with the following fields: "
             "evaluation (PASS, WARNING, or REJECT), score (0-100), reasoning (str), "
             "issues (list), risk_level (LOW, MEDIUM, HIGH). "
-            "IMPORTANT: Output MUST be a valid JSON object. Do not include any newlines or unescaped characters within JSON string values."
+            "IMPORTANT: Output MUST be a valid JSON object."
         )
         # RAG Engine initialization
         self.rag_engine = RAGEngine()
@@ -37,21 +38,18 @@ class ClaudeAgent(BaseTradingAgent):
             f"Market: {market_data.get('market', 'N/A')}"
         ]
         
-        md = market_data.get("market_data", {})
-        sd = market_data.get("screening_data", {})
+        # Adjust for new dataset format
+        pd = market_data.get("price_data", {})
         signals = [
-            f"Price: {md.get('close', 'N/A')}",
-            f"Change: {md.get('change_rate', 'N/A')}%",
-            f"Volume: {md.get('volume', 'N/A')}",
-            f"Momentum Score: {sd.get('momentum_score', 'N/A')}"
+            f"Price: {pd.get('current', 'N/A')}",
+            f"Change: {pd.get('change_rate', 'N/A')}%"
         ]
         query_parts.append(f"Market signals: {', '.join(signals)}")
         
         if gpt_result:
             gpt_parts = [
                 f"Decision: {gpt_result.get('decision', 'N/A')}",
-                f"Reasoning: {str(gpt_result.get('reasoning', ''))[:100]}",
-                f"Risks: {str(gpt_result.get('risks', ''))[:100]}"
+                f"Reasoning: {str(gpt_result.get('reasoning', ''))[:100]}"
             ]
             query_parts.append(f"GPT analysis: {', '.join(gpt_parts)}")
         else:
@@ -112,24 +110,5 @@ class ClaudeAgent(BaseTradingAgent):
         if status.value != "SUCCESS" or not response_text:
             return None
 
-        try:
-            # Basic parsing, handling potential markdown blocks
-            clean_text = response_text.replace("```json", "").replace("```", "").strip()
-            data = json.loads(clean_text)
-
-            # Validation
-            required = ["evaluation", "score", "reasoning", "issues", "risk_level"]
-            if not all(k in data for k in required):
-                logger.error("Claude returned incomplete evaluation structure.")
-                return None
-
-            return data
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Claude response as JSON. Error: {e}")
-            logger.error(f"Raw response text: {response_text}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error parsing Claude response: {e}")
-            return None
+        return ClaudeParser.parse_response(response_text)
 

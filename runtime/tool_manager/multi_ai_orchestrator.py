@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from agents.gpt_agent.agent import GPTAgent
 from agents.gemini_agent.agent import GeminiAgent
 from agents.claude_agent.agent import ClaudeAgent
 from runtime.tool_manager.consensus_manager import ConsensusManager
@@ -13,7 +12,6 @@ class MultiAIOrchestrator:
     """
     def __init__(self):
         self.agents = {
-            "GPT": GPTAgent(),
             "Gemini": GeminiAgent(),
             "Claude": ClaudeAgent()
         }

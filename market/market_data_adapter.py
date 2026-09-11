@@ -4,14 +4,18 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
+from market.technical_analysis import TechnicalAnalysisEngine
 
 logger = logging.getLogger("MarketDataAdapter")
 
 class MarketDataAdapter:
     """
-    Candidate DataFrame을 GPT Agent가 사용할 수 있는 
-    JSON-compatible 데이터 구조로 변환하는 Adapter.
+    Candidate DataFrame을 Gemini Agent가 사용할 수 있는 
+    Gemini Analysis Dataset 구조로 변환하는 Adapter.
     """
+
+    def __init__(self):
+        self.tech_engine = TechnicalAnalysisEngine()
 
     def _convert_to_serializable(self, obj: Any) -> Any:
         """
@@ -27,80 +31,64 @@ class MarketDataAdapter:
             return None
         return obj
 
-    def validate_types(self, obj: Any, path: str = "root") -> List[str]:
-        """
-        데이터가 JSON-compatible Python 기본 타입인지 검증한다.
-        허용: dict, list, str, int, float, bool, None
-        """
-        errors = []
-        if isinstance(obj, dict):
-            for k, v in obj.items():
-                errors.extend(self.validate_types(v, f"{path}.{k}"))
-        elif isinstance(obj, list):
-            for i, item in enumerate(obj):
-                errors.extend(self.validate_types(item, f"{path}[{i}]"))
-        elif not isinstance(obj, (str, int, float, bool)) and obj is not None:
-            errors.append(f"Invalid type at {path}: {type(obj).__name__}")
-        return errors
-
-
     def convert_candidates(
         self,
         candidate_df: pd.DataFrame,
+        historical_data_map: Dict[str, pd.DataFrame] = None,
         portfolio_state: Dict[str, Any] = None,
         macro_data: Dict[str, Any] = None,
     ) -> List[Dict[str, Any]]:
         """
-        DataFrame을 종목별 JSON-compatible List[Dict]로 변환한다.
+        DataFrame을 종목별 Gemini Analysis Dataset List[Dict]로 변환한다.
         """
         if candidate_df.empty:
             return []
 
         market_data_list = []
-        
-        # DataFrame을 Dict 리스트로 변환
         candidates = candidate_df.to_dict(orient="records")
 
         for candidate in candidates:
-            # 기본 데이터 변환
-            clean_candidate = {
-                k: self._convert_to_serializable(v)
-                for k, v in candidate.items()
-            }
+            ticker = candidate.get("ticker")
             
-            # GPT Agent에 맞는 표준화된 구조 구성
-            # (기존 _collect_data와 호환성 유지)
+            # Technical Analysis
+            tech_results = self.tech_engine._empty_result()
+            if historical_data_map and ticker in historical_data_map:
+                tech_results = self.tech_engine.calculate(historical_data_map[ticker])
+            
+            # Gemini Analysis Dataset 구성
             market_data = {
-                "timestamp": datetime.now().isoformat(),
-                "ticker": clean_candidate.get("ticker"),
-                "name": clean_candidate.get("name"),
-                "market": clean_candidate.get("market"),
+                "ticker": ticker,
+                "name": candidate.get("name"),
+                "market": candidate.get("market"),
                 
-                "market_data": {
-                    "open": clean_candidate.get("open"),
-                    "high": clean_candidate.get("high"),
-                    "low": clean_candidate.get("low"),
-                    "close": clean_candidate.get("close"),
-                    "change_rate": clean_candidate.get("change_rate"),
-                    "volume": clean_candidate.get("volume"),
-                    "trading_value": clean_candidate.get("trading_value"),
-                    "market_cap": clean_candidate.get("market_cap"),
+                "price_data": {
+                    "current": self._convert_to_serializable(candidate.get("close")),
+                    "previous_close": self._convert_to_serializable(candidate.get("close") - candidate.get("change", 0)),
+                    "change_rate": self._convert_to_serializable(candidate.get("change_rate")),
+                },
+                "market_data": { # Legacy compatibility
+                    "close": self._convert_to_serializable(candidate.get("close")),
+                    "change_rate": self._convert_to_serializable(candidate.get("change_rate")),
                 },
                 
-                "screening_data": {
-                    k: v for k, v in clean_candidate.items()
-                    if k not in ["ticker", "name", "market", "open", "high", "low", "close", "change_rate", "volume", "trading_value", "market_cap"]
+                "returns": tech_results["returns"],
+                "technical": tech_results["technical"],
+                "volume": tech_results["volume"],
+                
+                "market_context": {
+                    "market_cap": self._convert_to_serializable(candidate.get("market_cap")),
+                    "trading_value": self._convert_to_serializable(candidate.get("trading_value")),
                 },
                 
+                "screening_context": {
+                    "screening_score": self._convert_to_serializable(candidate.get("screening_score")),
+                },
+                
+                "macro": macro_data or {},
                 "portfolio": portfolio_state or {},
-                "macro_data": macro_data or {},
-                # 추후 실제 AI 모드에서는 news/sentiment/risk를 별도 모듈에서 수집하여 추가 예정
-                "news": [],
-                "sentiment_analysis": {},
-                "risk_report": {},
             }
             
             market_data_list.append(market_data)
             
-        logger.info(f"Converted {len(market_data_list)} candidates for AI analysis.")
+        logger.info(f"Converted {len(market_data_list)} candidates for Gemini analysis.")
         return market_data_list

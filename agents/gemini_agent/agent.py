@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import List, Optional
+from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -34,45 +34,65 @@ class GeminiAgent(BaseTradingAgent):
 
     def make_decision(self, market_data: dict) -> dict:
         """
-        Gemini 모델을 사용한 1차 투자 분석 수행.
+        Backward compatibility: Analyze single ticker data using batch logic.
         """
+        # Pass the market_data dict in a list to execute_batch
+        batch_result = self.execute_batch([market_data])
+        analyses = batch_result.get("analyses", [])
+        return analyses[0] if analyses else None
+
+    def execute_batch(self, market_data_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Gemini 모델을 사용한 후보군 일괄(Batch) 1차 투자 분석 수행.
+        """
+        if not market_data_list:
+            return {"analyses": [], "selected_candidates": []}
+
         # 1. 프롬프트 구성
-        macro_data = market_data.get("macro_data", {})
-        macro_str = json.dumps(macro_data, indent=2, ensure_ascii=False) if macro_data else "No current macro data available."
-        
-        user_prompt = self.decision_prompt.replace("{{MACRO_DATA}}", macro_str)
-        user_prompt += f"\n\n# Market Data\n{json.dumps(market_data, indent=2, ensure_ascii=False)}"
+        user_prompt = self.decision_prompt.replace("{{MARKET_DATA}}", json.dumps({"candidates": market_data_list}, indent=2, ensure_ascii=False))
 
         # 2. Mock 모드 처리
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
-            return self._get_mock_decision(market_data)
+            # Mock 데이터 생성 (분석 결과 + 선정 종목)
+            return {
+                "analyses": [self._get_single_analysis_mock(d) for d in market_data_list],
+                "selected_candidates": [{"ticker": d.get("ticker"), "priority": "HIGH", "reason": "Mock reason"} for d in market_data_list[:min(len(market_data_list), 2)]]
+            }
 
         # 3. 실제 API 호출
         try:
-            # Google Search Grounding 없이 일반 분석 수행
             config = types.GenerateContentConfig(
                 system_instruction=self.system_prompt,
                 response_mime_type="application/json"
             )
-            
+
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=user_prompt,
                 config=config
             )
-            
-            return json.loads(response.text)
-            
+
+            # 파싱 후 스키마 검증
+            data = json.loads(response.text)
+            if "analyses" not in data or "selected_candidates" not in data:
+                logger.error("Gemini Batch API output missing required fields: analyses or selected_candidates.")
+                return {"analyses": [], "selected_candidates": []}
+            return data
+
         except Exception as e:
             logger.error(f"Gemini API Error: {e}")
-            return None
+            return {"analyses": [], "selected_candidates": []}
 
-    def _get_mock_decision(self, market_data: dict) -> dict:
+    def _get_single_analysis_mock(self, data: dict) -> dict:
         return {
-            "decision": "HOLD",
-            "confidence": 0.5,
-            "reasoning": ["Mock reasoning based on market data"],
+            "ticker": data.get("ticker"),
+            "decision": "BUY",
+            "confidence": 0.7,
+            "reasoning": "Mock reasoning",
             "risks": ["Mock risks"],
             "expected_result": "Mock outcome",
-            "selected_candidates": [market_data.get("ticker", "000660")]
+            "analysis": {
+                "trend": "Up",
+                "momentum": "Strong"
+            }
         }

@@ -22,7 +22,9 @@ class AnthropicClient:
             raise ValueError("ANTHROPIC_API_KEY not found and USE_MOCK_CLAUDE is false")
         
         if not self.use_mock:
-            self.client = anthropic.Anthropic(api_key=self.api_key, max_retries=0)
+            # Explicitly create client avoiding potential proxy issues
+            http_client = httpx.Client()
+            self.client = anthropic.Anthropic(api_key=self.api_key, http_client=http_client, max_retries=0)
         else:
             self.client = None
 

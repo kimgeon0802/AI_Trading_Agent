@@ -144,6 +144,80 @@ class RuntimeExecutor:
             await self._run_real_ai_cycle(market_condition)
         else:
             await self._run_mock_cycle(market_condition)
+            
+    async def _run_real_ai_cycle(self, market_condition=None):
+        """
+        Gemini 1차 분석 및 Claude 2차 심층 분석이 포함된 실제 AI 파이프라인.
+        """
+        logger.info("Starting REAL AI trading cycle...")
+        
+        # 1. Screening & Refinement
+        candidates_df = self.market_pipeline.run()
+        refined_df = self.refiner.refine(candidates_df)
+        
+        # 2. Historical Data Fetch & Technical Analysis
+        from market.market_data_collector import MarketDataCollector
+        collector = MarketDataCollector()
+        historical_data_map = {}
+        for _, row in refined_df.iterrows():
+            ticker = row['ticker']
+            historical_data_map[ticker] = collector.get_historical_ohlcv(ticker, days=100)
+        
+        # 3. Market Data Adapter (Gemini Analysis Dataset Creation)
+        portfolio_state = self.portfolio_manager.get_current_state()
+        self.macro_manager.fetch_and_save_macro_data()
+        macro_data = self.macro_manager.get_current_macro_indicators()
+        
+        gemini_dataset = self.market_data_adapter.convert_candidates(
+            refined_df,
+            historical_data_map=historical_data_map,
+            portfolio_state=portfolio_state,
+            macro_data=macro_data
+        )
+        
+        # 4. Gemini Batch 분석
+        logger.info(f"Executing Batch AI Pipeline for {len(gemini_dataset)} candidates")
+        batch_result = self.agent.execute_batch_gemini(gemini_dataset)
+        
+        selected_candidates = batch_result.get("selected_candidates", [])
+        
+        # 5. Tavily & Claude & Consensus (Selected Candidates Only)
+        for candidate in selected_candidates:
+            ticker = candidate["ticker"]
+            
+            # Gemini 결과 추출
+            gemini_analysis = next((a for a in batch_result.get("analyses", []) if a["ticker"] == ticker), None)
+            if not gemini_analysis:
+                logger.warning(f"Analysis missing for {ticker}, skipping.")
+                continue
+
+            # Traceability
+            timestamp = datetime.now().isoformat()
+            prediction_id = self.db.save_prediction(
+                ticker, "PENDING", 0.0, 0.0, "Multi-AI Pending", timestamp
+            )
+            
+            # Tavily Search
+            search_results = []
+            status, results = self.agent.tavily_provider.search(f"{ticker} 최신 뉴스")
+            if status == APIStatus.SUCCESS:
+                search_results.extend(results)
+
+            # Claude Analysis & Consensus
+            decision_result = self.agent.execute_single(
+                market_data=next((d for d in gemini_dataset if d["ticker"] == ticker), {}),
+                gemini_analysis=gemini_analysis,
+                search_results=search_results,
+                prediction_id=prediction_id
+            )
+            
+            # 6. PositionSizer & PortfolioManager Execution
+            current_price = next((d for d in gemini_dataset if d["ticker"] == ticker), {}).get("price_data", {}).get("current", 0)
+            
+            if decision_result:
+                self.portfolio_manager.execute_decision(
+                    ticker, decision_result, current_price, prediction_id=prediction_id
+                )
 
     async def _run_mock_cycle(self, market_condition=None):
         """
@@ -184,7 +258,7 @@ class RuntimeExecutor:
             decision_result = self.agent.execute(market_data, prediction_id)
             
             # Portfolio execution logic (holding over from original)
-            current_price = market_data["market_data"]["close"]
+            current_price = market_data["price_data"]["current"]
             
             if decision_result:
                 decision = decision_result.get("decision", "HOLD")

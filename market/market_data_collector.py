@@ -39,6 +39,10 @@ load_dotenv(
 )
 
 
+import logging
+
+logger = logging.getLogger("MarketDataCollector")
+
 class MarketDataCollector:
     """
     KOSPI + KOSDAQ 전체 시장 데이터를 수집하는 클래스.
@@ -329,7 +333,50 @@ class MarketDataCollector:
         ]
 
     # ========================================================
-    # Single Market Collection
+    # Historical OHLCV
+    # ========================================================
+
+    def get_historical_ohlcv(self, ticker: str, days: int = 100) -> pd.DataFrame:
+        """
+        특정 종목의 과거 OHLCV 데이터를 조회한다.
+        """
+        # 현재 날짜로부터 days만큼 이전 날짜 계산
+        # 거래일 기준이 아니므로 넉넉하게 잡기 위해 1.5배의 캘린더 일수 사용
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days * 1.5)
+        
+        print(f"[INFO] Fetching historical data for {ticker}: {start_date.strftime('%Y%m%d')} ~ {end_date.strftime('%Y%m%d')}")
+        
+        df = stock.get_market_ohlcv(
+            start_date.strftime("%Y%m%d"),
+            end_date.strftime("%Y%m%d"),
+            ticker
+        )
+        
+        if df.empty:
+            logger.warning(f"No historical data for {ticker}")
+            return pd.DataFrame()
+            
+        df = df.reset_index()
+        
+        # 컬럼 표준화
+        df = df.rename(
+            columns={
+                "날짜": "date",
+                "시가": "open",
+                "고가": "high",
+                "저가": "low",
+                "종가": "close",
+                "거래량": "volume",
+                "등락률": "change_rate",
+            }
+        )
+        
+        # 필요한 컬럼만 선택 및 정렬
+        df = df[["date", "open", "high", "low", "close", "volume", "change_rate"]]
+        df = df.sort_values(by="date", ascending=True)
+        
+        return df
     # ========================================================
 
     def collect_market(
