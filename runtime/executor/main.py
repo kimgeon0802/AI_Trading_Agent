@@ -126,7 +126,28 @@ class RuntimeExecutor:
     # Trading Cycle
     # ========================================================
 
-    async def run_cycle(self, market_condition=None):
+    # ========================================================
+    # Trading Cycle
+    # ========================================================
+
+    def _calculate_overall_status(self, cycle_data: dict) -> str:
+        if cycle_data.get("fatal_error"):
+            return "FAILED"
+            
+        candidate_summary = cycle_data.get("candidate_summary", [])
+        if not candidate_summary:
+            return "FAILED"
+            
+        statuses = [c["status"] for c in candidate_summary]
+        
+        if all(s == "SUCCESS" for s in statuses):
+            return "SUCCESS"
+        elif all(s in ("FALLBACK", "FAILED") for s in statuses):
+            return "FAILED"
+        else:
+            return "PARTIAL"
+
+    async def run_cycle(self, market_condition=None) -> dict:
 
         logger.info(
             "Starting new trading cycle..."
@@ -138,22 +159,58 @@ class RuntimeExecutor:
         
         if os.environ.get("VALIDATE_ADAPTER_ONLY", "false").lower() == "true":
             await self._run_adapter_validation()
-            return
+            return {
+                "status": "SUCCESS",
+                "prediction_ids": [],
+                "candidate_summary": [],
+                "summary": "Adapter validation completed."
+            }
             
         if self.is_real_ai_mode:
-            await self._run_real_ai_cycle(market_condition)
+            cycle_data = await self._run_real_ai_cycle(market_condition)
         else:
-            await self._run_mock_cycle(market_condition)
+            cycle_data = await self._run_mock_cycle(market_condition)
             
-    async def _run_real_ai_cycle(self, market_condition=None):
+        status = self._calculate_overall_status(cycle_data)
+        prediction_ids = cycle_data.get("prediction_ids", [])
+        candidate_summary = cycle_data.get("candidate_summary", [])
+        
+        success_count = sum(1 for c in candidate_summary if c["status"] == "SUCCESS")
+        fallback_count = sum(1 for c in candidate_summary if c["status"] in ("FALLBACK", "FAILED"))
+        
+        summary_msg = (
+            f"Trading Cycle completed with Status: {status}. "
+            f"Predictions: {len(prediction_ids)}, Succeeded: {success_count}, Fallback/Failed: {fallback_count}"
+        )
+        
+        cycle_result = {
+            "status": status,
+            "prediction_ids": prediction_ids,
+            "candidate_summary": candidate_summary,
+            "summary": summary_msg
+        }
+        logger.info(summary_msg)
+        return cycle_result
+
+    async def _run_real_ai_cycle(self, market_condition=None) -> dict:
         """
         Gemini 1차 분석 및 Claude 2차 심층 분석이 포함된 실제 AI 파이프라인.
         """
         logger.info("Starting REAL AI trading cycle...")
+        prediction_ids = []
+        candidate_summary = []
         
         # 1. Screening & Refinement
-        candidates_df = self.market_pipeline.run()
-        refined_df = self.refiner.refine(candidates_df)
+        try:
+            candidates_df = self.market_pipeline.run()
+            refined_df = self.refiner.refine(candidates_df)
+        except Exception as e:
+            logger.error(f"Market Pipeline / Refinement failed: {e}")
+            return {"prediction_ids": [], "candidate_summary": [], "fatal_error": str(e)}
+            
+        if refined_df.empty:
+            logger.warning("No refined candidates found.")
+            return {"prediction_ids": [], "candidate_summary": [], "fatal_error": "No candidates found"}
         
         # 2. Historical Data Fetch & Technical Analysis
         from market.market_data_collector import MarketDataCollector
@@ -179,7 +236,14 @@ class RuntimeExecutor:
         logger.info(f"Executing Batch AI Pipeline for {len(gemini_dataset)} candidates")
         batch_result = self.agent.execute_batch_gemini(gemini_dataset)
         
+        if batch_result.get("error") or not batch_result.get("analyses"):
+            logger.error(f"Gemini Batch failed: {batch_result.get('error', 'No analyses returned')}")
+            return {"prediction_ids": [], "candidate_summary": [], "fatal_error": "Gemini batch failed"}
+            
         selected_candidates = batch_result.get("selected_candidates", [])
+        if not selected_candidates:
+            logger.warning("No selected candidates returned by Gemini.")
+            return {"prediction_ids": [], "candidate_summary": [], "fatal_error": "No candidates selected"}
         
         # 5. Tavily & Claude & Consensus (Selected Candidates Only)
         for candidate in selected_candidates:
@@ -196,6 +260,7 @@ class RuntimeExecutor:
             prediction_id = self.db.save_prediction(
                 ticker, "PENDING", 0.0, 0.0, "Multi-AI Pending", timestamp
             )
+            prediction_ids.append(prediction_id)
             
             # Tavily Search
             search_results = []
@@ -211,25 +276,54 @@ class RuntimeExecutor:
                 prediction_id=prediction_id
             )
             
+            is_fallback = decision_result.get("is_fallback", False) if decision_result else True
+            method = decision_result.get("consensus", {}).get("method", "fallback_hold") if decision_result else "fallback_hold"
+            cand_status = "FALLBACK" if is_fallback else "SUCCESS"
+            
             # 6. PositionSizer & PortfolioManager Execution
             current_price = next((d for d in gemini_dataset if d["ticker"] == ticker), {}).get("price_data", {}).get("current", 0)
             
             if decision_result:
-                self.portfolio_manager.execute_decision(
-                    ticker, decision_result, current_price, prediction_id=prediction_id
-                )
+                try:
+                    self.portfolio_manager.execute_decision(
+                        ticker, decision_result, current_price, prediction_id=prediction_id
+                    )
+                except Exception as e:
+                    logger.error(f"Portfolio execution failed for {ticker}: {e}")
+                    cand_status = "PARTIAL"
 
-    async def _run_mock_cycle(self, market_condition=None):
+            candidate_summary.append({
+                "ticker": ticker,
+                "status": cand_status,
+                "consensus_method": method
+            })
+
+        return {
+            "prediction_ids": prediction_ids,
+            "candidate_summary": candidate_summary
+        }
+
+    async def _run_mock_cycle(self, market_condition=None) -> dict:
         """
         신규 Gemini 파이프라인 기반 MOCK 테스트 파이프라인
         """
+        prediction_ids = []
+        candidate_summary = []
+
         if market_condition:
             self.market_simulator.set_condition(market_condition)
         self.market_simulator.simulate_step()
         
         # 1. Screening & Refinement
-        candidates_df = self.market_pipeline.run()
-        refined_df = self.refiner.refine(candidates_df)
+        try:
+            candidates_df = self.market_pipeline.run()
+            refined_df = self.refiner.refine(candidates_df)
+        except Exception as e:
+            logger.error(f"Mock Market Pipeline failed: {e}")
+            return {"prediction_ids": [], "candidate_summary": [], "fatal_error": str(e)}
+
+        if refined_df.empty:
+            return {"prediction_ids": [], "candidate_summary": [], "fatal_error": "No candidates"}
         
         # 2. Convert to JSON/Dict
         portfolio_state = self.portfolio_manager.get_current_state()
@@ -253,18 +347,36 @@ class RuntimeExecutor:
             prediction_id = self.db.save_prediction(
                 target_ticker, "PENDING", 0.0, 0.0, "Multi-AI Pending", timestamp
             )
+            prediction_ids.append(prediction_id)
             
             # Execute
             decision_result = self.agent.execute(market_data, prediction_id)
+            is_fallback = decision_result.get("is_fallback", False) if decision_result else True
+            method = decision_result.get("consensus", {}).get("method", "validated_by_claude") if decision_result else "fallback_hold"
+            cand_status = "FALLBACK" if is_fallback else "SUCCESS"
             
             # Portfolio execution logic (holding over from original)
             current_price = market_data["price_data"]["current"]
             
             if decision_result:
-                decision = decision_result.get("decision", "HOLD")
-                self.portfolio_manager.execute_decision(
-                    target_ticker, decision_result, current_price, prediction_id=prediction_id
-                )
+                try:
+                    self.portfolio_manager.execute_decision(
+                        target_ticker, decision_result, current_price, prediction_id=prediction_id
+                    )
+                except Exception as e:
+                    logger.error(f"Portfolio execution failed for {target_ticker}: {e}")
+                    cand_status = "PARTIAL"
+
+            candidate_summary.append({
+                "ticker": target_ticker,
+                "status": cand_status,
+                "consensus_method": method
+            })
+
+        return {
+            "prediction_ids": prediction_ids,
+            "candidate_summary": candidate_summary
+        }
 
     async def _run_adapter_validation(self):
         """

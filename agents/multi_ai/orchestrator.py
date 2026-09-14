@@ -75,12 +75,14 @@ class MultiAIOrchestrator:
         final_decision = self.consensus_manager.get_consensus(gemini_analysis, claude_result)
         
         # 4. Construct Final Result
+        is_fallback = (final_decision.get("method") == "fallback_hold")
         final_result = {
             "decision": final_decision["decision"],
             "confidence": final_decision["confidence"],
             "reasoning": final_decision["reasoning"],
             "risks": gemini_analysis["risks"] if gemini_analysis else "No Gemini risks",
             "expected_result": gemini_analysis["expected_result"] if gemini_analysis else "No Gemini expected result",
+            "is_fallback": is_fallback,
             "consensus": {
                 "method": final_decision["method"],
                 "participants": ["gemini", "claude"]

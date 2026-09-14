@@ -282,7 +282,13 @@ async def main():
             )
         )
 
-        await executor.run_cycle()
+        cycle_result = await executor.run_cycle()
+        status = cycle_result.get("status", "UNKNOWN") if isinstance(cycle_result, dict) else "SUCCESS"
+        prediction_ids = cycle_result.get("prediction_ids", []) if isinstance(cycle_result, dict) else []
+
+        print(f"[STATUS] Cycle Status: {status}")
+        if isinstance(cycle_result, dict) and cycle_result.get("summary"):
+            print(f"[INFO] {cycle_result['summary']}")
 
         print("[OK] Trading Agent 실행 완료")
 
@@ -314,9 +320,9 @@ async def main():
 
         detailed_gen = DetailedReportGenerator(db)
 
-        detailed_gen.generate_report()
+        detailed_gen.generate_report(prediction_ids=prediction_ids)
 
-        print("[OK] 상세 거래 보고서 생성 완료")
+        print(f"[OK] 상세 거래 보고서 생성 완료 (prediction_ids: {prediction_ids})")
 
 
         # ----------------------------------------------------
