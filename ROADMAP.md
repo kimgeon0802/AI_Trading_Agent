@@ -39,11 +39,12 @@
 ### Portfolio
 - [완료 / 단위 테스트 확인] Portfolio 자산 평가 로직을 종목별 현재가 반영 구조로 개선.
 - 기존 DB 데이터를 보존하며 정확한 Valuation 계산 로직으로 수정.
+- [완료 / 단위 테스트 확인] STEP 1 Portfolio Current Price Source 검증 및 구조 개선 완료.
 
 ## Known Issues
-### Portfolio Current Price Source [검증 필요]
-- 개선된 Valuation 로직이 실제 KRX 최신가 데이터와 정확히 매칭되는지 확인 필요.
-- MarketDataAdapter 데이터 흐름과 PortfolioManager의 가격 조회 경로 통합 검증.
+### Portfolio Current Price Source
+- [완료 / 검증 완료] Valuation 로직이 종목별 실제 가격을 반영하도록 수정됨.
+- [현재 이슈] `get_latest_price()` 호출마다 `collect_all_markets()`가 전체 호출되어 성능 저하 발생. 향후 캐싱 및 배치 수집 구조로 개선 필요.
 
 ### Report Generator [미해결 / 내일 작업]
 - AI 파이프라인 단계별 성공/실패 여부를 반영하도록 보고서 생성 로직 개선 필요.
@@ -54,10 +55,6 @@
 - 단계별(Gemini/Claude/Consensus/Portfolio) 상태 관리 및 전체 Cycle 상태 코드(SUCCESS/PARTIAL/FAILED) 도입.
 
 ## Next Session
-### Step 1. Portfolio current price source 검증
-- PortfolioManager가 사용하는 실시간 현재가 공급원(MarketDataAdapter vs Collector)의 정확성 확인.
-- 종목별 가격 매칭 및 단위 검증.
-
 ### Step 2. Report Generator 수정
 - trading cycle 데이터만 보고서에 반영되도록 로직 개선.
 

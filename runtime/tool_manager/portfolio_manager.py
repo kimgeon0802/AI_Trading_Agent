@@ -56,7 +56,7 @@ class PortfolioManager:
             logger.info(f"HOLD decision for {ticker}. No action taken.")
         
         # Update total asset value
-        self._update_total_asset(current_price, timestamp)
+        self._update_total_asset(timestamp)
 
     def _handle_buy(self, ticker, available_cash, price, confidence, timestamp, prediction_id=None):
         # MVP logic: use 20% of cash for BUY (To be replaced by PositionSizer output)
@@ -103,11 +103,44 @@ class PortfolioManager:
         else:
             logger.warning(f"No holdings of {ticker} to SELL")
 
-    def _update_total_asset(self, current_price, timestamp):
+    def get_latest_price(self, ticker: str) -> Optional[float]:
+        """
+        MarketDataCollector를 사용하여 특정 종목의 최신 가격을 조회한다.
+        """
+        from market.market_data_collector import MarketDataCollector
+        collector = MarketDataCollector()
+        
+        # 최신 데이터를 수집하여 특정 티커의 가격을 찾는다.
+        # 실제 환경에서는 캐싱 전략이 필요할 수 있음.
+        try:
+            market_df = collector.collect_all_markets()
+            price_row = market_df[market_df["ticker"] == ticker]
+            if not price_row.empty:
+                return float(price_row.iloc[0]["close"])
+            else:
+                logger.warning(f"Price not found for {ticker}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to fetch price for {ticker}: {e}")
+            return None
+
+    def _update_total_asset(self, timestamp):
         portfolio = self.db.get_portfolio()
         holdings = self.db.get_holdings()
         
-        holdings_value = sum(h["quantity"] * current_price for h in holdings)
+        holdings_value = 0.0
+        for h in holdings:
+            price = self.get_latest_price(h["ticker"])
+            if price is not None:
+                holdings_value += h["quantity"] * price
+            else:
+                logger.error(f"Cannot calculate total asset due to missing price for {h['ticker']}")
+                # 기존 오류 정책에 따라, 가격을 알 수 없는 경우 자산 업데이트를 보류하거나
+                # 이전 가격을 사용해야 함. 여기서는 일단 실패 시 로그만 남기고 
+                # 0으로 처리하거나, 이전 총 자산값을 유지하는 전략 선택 가능.
+                # 일단 계산 실패로 간주하고 업데이트하지 않음.
+                return
+        
         total_asset = portfolio["cash"] + holdings_value
         
         self.db.update_portfolio(portfolio["cash"], total_asset, timestamp)

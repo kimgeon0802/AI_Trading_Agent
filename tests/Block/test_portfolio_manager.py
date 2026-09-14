@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from runtime.tool_manager.portfolio_manager import PortfolioManager
 
 class MockDB:
@@ -32,7 +32,9 @@ def test_portfolio_buy():
     decision = {"decision": "BUY", "confidence": 0.9}
     price = 100000
     
-    pm.execute_decision(ticker, decision, price)
+    # Mock price fetching to avoid external calls
+    with patch.object(pm, 'get_latest_price', return_value=100000):
+        pm.execute_decision(ticker, decision, price)
     
     state = pm.get_current_state()
     assert state["cash"] == 8000000 # 20% of 10M = 2M used
@@ -52,7 +54,9 @@ def test_portfolio_sell():
     decision = {"decision": "SELL", "confidence": 0.9}
     price = 110000
     
-    pm.execute_decision(ticker, decision, price)
+    # Mock price fetching to avoid external calls
+    with patch.object(pm, 'get_latest_price', return_value=110000):
+        pm.execute_decision(ticker, decision, price)
     
     state = pm.get_current_state()
     assert state["cash"] == 11100000 # 10M + 1.1M = 11.1M
