@@ -16,36 +16,44 @@ class ClaudeParser:
 
         import re
 
-        # 1. 시도: 정규표현식으로 { ... } 블록 추출 (가장 바깥쪽 JSON 객체 시도)
-        # Markdown fence 내부에 있는 JSON을 우선적으로 찾습니다.
-        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL)
-        if json_match:
+        # 1. Markdown code block 내부의 텍스트가 있다면 우선 추출
+        candidate_text = response_text
+        block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
+        if block_match:
+            candidate_text = block_match.group(1)
+
+        # 2. candidate_text에서 가장 바깥쪽 { 와 } 위치 탐색 및 파싱
+        start = candidate_text.find('{')
+        end = candidate_text.rfind('}')
+        if start != -1 and end != -1 and end > start:
+            json_str = candidate_text[start : end + 1]
             try:
-                data = json.loads(json_match.group(1))
+                data = json.loads(json_str, strict=False)
                 if ClaudeParser._validate_schema(data):
                     return data
             except json.JSONDecodeError:
                 pass
 
-        # 2. 시도: 전체 텍스트에서 JSON 객체 시도
+        # 3. candidate_text에서 파싱 실패 시, 전체 response_text에서 가장 바깥쪽 { 와 } 탐색
+        if candidate_text != response_text:
+            start = response_text.find('{')
+            end = response_text.rfind('}')
+            if start != -1 and end != -1 and end > start:
+                json_str = response_text[start : end + 1]
+                try:
+                    data = json.loads(json_str, strict=False)
+                    if ClaudeParser._validate_schema(data):
+                        return data
+                except json.JSONDecodeError:
+                    pass
+
+        # 4. 전체 텍스트 직접 json.loads 시도
         try:
-            data = json.loads(response_text)
+            data = json.loads(response_text.strip(), strict=False)
             if ClaudeParser._validate_schema(data):
                 return data
         except json.JSONDecodeError:
             pass
-
-        # 3. 시도: 더 포괄적인 { } 추출 (Markdown 내부에 있지 않은 경우 등)
-        start = response_text.find('{')
-        end = response_text.rfind('}')
-        if start != -1 and end != -1 and end > start:
-            try:
-                json_str = response_text[start : end + 1]
-                data = json.loads(json_str)
-                if ClaudeParser._validate_schema(data):
-                    return data
-            except json.JSONDecodeError:
-                pass
 
         logger.error(f"Failed to parse Claude response. Text: {response_text[:100]}...")
         return None
