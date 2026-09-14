@@ -25,44 +25,34 @@
 - Portfolio 자산 평가(Valuation) 로직 개선 완료.
 
 ## Completed
-### Gemini
-- [완료 / Real API 확인] Gemini 3.1 Flash-Lite 모델 변경 및 Batch API 통합.
-- [완료 / Real API 확인] Gemini JSON Parser 강화 (설명문/Markdown fence 처리).
+### Claude Parser (오늘 완료)
+- [완료 / 검증 완료] Markdown Code Fence, Nested JSON 구조 처리를 위한 JSON Parser 추출 로직 개선 (Commit: 06ddd16).
+- [완료 / 검증 완료] 테스트 코드(`tests/Block/test_nested_json.py`)를 통해 중첩 JSON 응답 파싱 검증 완료.
 
-### Claude
-- [완료 / Real API 확인] Claude API 응답 파서 강화 (Raw/Markdown/Explanation 포함 응답 처리).
+### STEP 3 Trading Cycle Status Tracking (완료)
+- [완료 / 검증 완료] `execute_single()` 내 fallback 상태 추적 및 prediction_ids, candidate summary 연결.
+- [완료 / 검증 완료] Cycle Status (SUCCESS/PARTIAL/FAILED) 집계 및 Fallback HOLD 로직 구분 구현 (Commit: 197966c 등 참조).
 
-### Real E2E
-- [완료 / Real API 확인] AI 파이프라인 핵심 API 연결 및 응답 파싱 성공.
-- `AI Pipeline Real E2E = SUCCESS` (단, Trading Cycle 내 보조 기능들은 검증 필요).
-
-### Portfolio
-- [완료 / 단위 테스트 확인] Portfolio 자산 평가 로직을 종목별 현재가 반영 구조로 개선.
-- 기존 DB 데이터를 보존하며 정확한 Valuation 계산 로직으로 수정.
-- [완료 / 단위 테스트 확인] STEP 1 Portfolio Current Price Source 검증 및 구조 개선 완료.
+### Portfolio & Reporting
+- [완료 / 검증 완료] Portfolio performance metrics 추가 및 Prediction IDs 기반 cycle filtering 구현.
 
 ## Known Issues
-### Portfolio Current Price Source
-- [완료 / 검증 완료] Valuation 로직이 종목별 실제 가격을 반영하도록 수정됨.
-- [현재 이슈] `get_latest_price()` 호출마다 `collect_all_markets()`가 전체 호출되어 성능 저하 발생. 향후 캐싱 및 배치 수집 구조로 개선 필요.
-
-### Report Generator [미해결 / 내일 작업]
-- AI 파이프라인 단계별 성공/실패 여부를 반영하도록 보고서 생성 로직 개선 필요.
-- 과거 데이터 집계 문제 해결 및 실행 세션별 결과 반영 필요.
-
-### Runtime Cycle Status [미해결 / 내일 작업]
-- Consensus FALLBACK 상황에서도 전체 사이클을 SUCCESS로 표시하는 문제 해결.
-- 단계별(Gemini/Claude/Consensus/Portfolio) 상태 관리 및 전체 Cycle 상태 코드(SUCCESS/PARTIAL/FAILED) 도입.
+### BLOCKER: KRX/pykrx 데이터 수집
+- [진행 불가] KRX WAF 차단으로 인한 `pykrx` 데이터 수집 단계의 `JSONDecodeError` 발생.
+- [대응] 실시간 파이프라인 통합 테스트 수행 불가. 데이터 수집 제한 해제 후 재시도 예정.
 
 ## Next Session
-### Step 2. Report Generator 수정
-- trading cycle 데이터만 보고서에 반영되도록 로직 개선.
+### Next 1. 데이터 수집 정상화 및 검증
+- KRX 접근 제한 해제 확인 후 소량 종목 데이터 수집 테스트.
+- 이후 전체시장 데이터 수집 1회 실행하여 ScreeningEngine 정상 동작 확인.
 
-### Step 3. Runtime 성공/실패 상태 개선
-- 각 파이프라인 단계별 성공/실패 마킹 및 전체 결과 마킹 로직 도입.
+### Next 2. STEP 3 REAL 통합 테스트 재실행
+- 데이터 수집 정상화 확인 후 파이프라인 전체 실행.
+- 주요 확인 항목: Claude Parser 정상 동작 (`claude_result != None`), Cycle Status 및 Prediction ID 연계 확인.
 
-### Step 4. Full Real E2E 최종 검증
-- 모든 수정 사항 적용 후 전체 Trading Cycle 최종 검증 (최소 호출).
+### Next 3. Report Generator 연결 검증
+- Cycle 성공 시 Prediction ID 기반 Trading Performance 필터링 정상 여부 확인.
+
 
 ## Development Rules
 - **DB 보호**: `data/trading.db`를 임의로 삭제/초기화하지 않음. 데이터 분석 후 최소 수정.
