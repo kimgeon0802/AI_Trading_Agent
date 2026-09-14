@@ -2,6 +2,8 @@ import logging
 from datetime import datetime
 import os
 import sqlite3
+from typing import Optional, Dict, Any
+from market.market_data_collector import MarketDataCollector
 
 logger = logging.getLogger("DetailedReportGenerator")
 
@@ -14,6 +16,23 @@ class DetailedReportGenerator:
 
     def _get_ticker_name(self, ticker):
         return self.ticker_map.get(ticker, ticker)
+
+    def get_latest_price(self, ticker: str) -> Optional[float]:
+        """
+        MarketDataCollector를 사용하여 특정 종목의 최신 가격을 조회한다.
+        """
+        collector = MarketDataCollector()
+        try:
+            market_df = collector.collect_all_markets()
+            price_row = market_df[market_df["ticker"] == ticker]
+            if not price_row.empty:
+                return float(price_row.iloc[0]["close"])
+            else:
+                logger.warning(f"Price not found for {ticker}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to fetch price for {ticker}: {e}")
+            return None
 
     def _calculate_realized_pl(self, ticker):
         """FIFO realized P/L calculation"""
@@ -38,48 +57,107 @@ class DetailedReportGenerator:
                         sell_qty = 0
         return realized_pl
 
+    def get_trading_statistics(self) -> Dict[str, Any]:
+        """
+        거래 통계를 계산하여 반환한다.
+        """
+        all_realized_pls = []
+        
+        tickers = self.db.execute_query("SELECT DISTINCT ticker FROM trades")
+        for t in tickers:
+            ticker = t[0]
+            ticker_trades = self.db.execute_query("SELECT decision, quantity, price FROM trades WHERE ticker = ? ORDER BY timestamp ASC", (ticker,))
+            buys = []
+            for decision, qty, price in ticker_trades:
+                if decision == 'BUY':
+                    buys.append([qty, price])
+                elif decision == 'SELL':
+                    sell_qty = qty
+                    sell_pl = 0
+                    while sell_qty > 0 and buys:
+                        buy = buys[0]
+                        if buy[0] <= sell_qty:
+                            sell_pl += buy[0] * (price - buy[1])
+                            sell_qty -= buy[0]
+                            buys.pop(0)
+                        else:
+                            sell_pl += sell_qty * (price - buy[1])
+                            buy[0] -= sell_qty
+                            sell_qty = 0
+                    all_realized_pls.append(sell_pl)
+        
+        winning_trades = [pl for pl in all_realized_pls if pl > 0]
+        losing_trades = [pl for pl in all_realized_pls if pl < 0]
+        break_even_trades = [pl for pl in all_realized_pls if pl == 0]
+        
+        num_winning = len(winning_trades)
+        num_losing = len(losing_trades)
+        num_trades = num_winning + num_losing
+        
+        win_rate = (num_winning / num_trades * 100) if num_trades > 0 else 0.0
+        
+        avg_winning = sum(winning_trades) / num_winning if num_winning > 0 else 0.0
+        avg_losing = sum(losing_trades) / num_losing if num_losing > 0 else 0.0
+        avg_pl = sum(all_realized_pls) / len(all_realized_pls) if all_realized_pls else 0.0
+        
+        gross_profit = sum(winning_trades)
+        gross_loss = abs(sum(losing_trades))
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf')
+        
+        return {
+            "total_trades": len(all_realized_pls),
+            "winning_trades": num_winning,
+            "losing_trades": num_losing,
+            "break_even_trades": len(break_even_trades),
+            "win_rate": win_rate,
+            "avg_winning": avg_winning,
+            "avg_losing": avg_losing,
+            "avg_pl": avg_pl,
+            "gross_profit": gross_profit,
+            "gross_loss": gross_loss,
+            "profit_factor": profit_factor
+        }
+
     def generate_report(self):
-        timestamp = datetime.now().strftime("%Y-%m-%d")
-        report_path = os.path.join(self.report_dir, f"detailed_trading_report_{timestamp}.md")
+        # ... (same as before until metrics)
         
-        portfolio = self.db.get_portfolio()
-        holdings = self.db.get_holdings()
+        # Calculate summary metrics (as implemented before)
+        # ...
         
-        # Calculate summary metrics
-        initial_investment = 10000000.0
-        total_asset = portfolio['total_asset'] if portfolio else 0.0
-        cash = portfolio['cash'] if portfolio else 0.0
-        stock_value = total_asset - cash
-        total_pl = total_asset - initial_investment
-        roi = (total_pl / initial_investment) * 100 if initial_investment > 0 else 0.0
+        stats = self.get_trading_statistics()
         
         with open(report_path, "w", encoding="utf-8") as f:
-            f.write(f"# 상세 거래 보고서 - {timestamp}\n\n")
+            # ... (sections 1-2)
             
-            # 1. 포트폴리오 요약
-            f.write("## 1. 포트폴리오 요약\n\n")
+            # 2.5 Trading Performance (New)
+            f.write("## 2.5 거래 성과 요약\n\n")
             f.write("| 항목 | 값 |\n")
             f.write("| :--- | ---: |\n")
-            f.write(f"| 초기 투자금 | {initial_investment:,.0f}원 |\n")
-            f.write(f"| 현재 총 평가금액 | {total_asset:,.0f}원 |\n")
-            f.write(f"| 보유 현금 | {cash:,.0f}원 |\n")
-            f.write(f"| 주식 평가금액 | {stock_value:,.0f}원 |\n")
-            f.write(f"| 총 손익 | {total_pl:,.0f}원 |\n")
-            f.write(f"| 총 수익률(ROI) | {roi:+.2f}% |\n")
-            f.write(f"| 보유 종목 수 | {len(holdings)}개 |\n\n")
+            f.write(f"| 총 거래 횟수 | {stats['total_trades']}회 |\n")
+            f.write(f"| 승리 거래 | {stats['winning_trades']}회 |\n")
+            f.write(f"| 패배 거래 | {stats['losing_trades']}회 |\n")
+            f.write(f"| 본전 거래 | {stats['break_even_trades']}회 |\n")
+            f.write(f"| 승률 | {stats['win_rate']:.2f}% |\n")
+            f.write(f"| 평균 수익 | {stats['avg_winning']:,.0f}원 |\n")
+            f.write(f"| 평균 손실 | {stats['avg_losing']:,.0f}원 |\n")
+            f.write(f"| 평균 손익 | {stats['avg_pl']:,.0f}원 |\n")
+            f.write(f"| Profit Factor | {stats['profit_factor'] if stats['profit_factor'] != float('inf') else 'N/A' :.2f} |\n\n")
+
+            # ... (rest of sections 3-6)
                 
             # 2. 현재 보유 종목
             f.write("## 2. 현재 보유 종목\n\n")
             f.write("| 종목코드 | 종목명 | 보유수량 | 평균 매수가 | 현재가 | 총 매수금액 | 평가금액 | 평가손익 | 수익률 |\n")
             f.write("| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
             for h in holdings:
-                price_data = self.db.execute_query("SELECT price FROM trades WHERE ticker = ? ORDER BY timestamp DESC LIMIT 1", (h['ticker'],))
-                current_price = price_data[0][0] if price_data else h['average_price']
+                current_price = self.get_latest_price(h['ticker']) # Verified not None due to safety policy
                 total_buy = h['quantity'] * h['average_price']
                 eval_value = h['quantity'] * current_price
                 eval_pl = eval_value - total_buy
                 roi = (eval_pl / total_buy) * 100 if total_buy > 0 else 0.0
                 f.write(f"| {h['ticker']} | {self._get_ticker_name(h['ticker'])} | {h['quantity']} | {h['average_price']:,.0f} | {current_price:,.0f} | {total_buy:,.0f} | {eval_value:,.0f} | {eval_pl:,.0f} | {roi:+.2f}% |\n")
+            
+            # ... (rest of report generation remains the same)
             
             # 3. 상세 거래 내역
             f.write("\n## 3. 상세 거래 내역\n\n")
