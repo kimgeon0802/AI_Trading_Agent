@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 import os
 import sqlite3
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from market.market_data_collector import MarketDataCollector
 
 logger = logging.getLogger("DetailedReportGenerator")
@@ -34,9 +34,16 @@ class DetailedReportGenerator:
             logger.error(f"Failed to fetch price for {ticker}: {e}")
             return None
 
-    def _calculate_realized_pl(self, ticker):
+    def _calculate_realized_pl(self, ticker, prediction_ids: Optional[List[int]] = None):
         """FIFO realized P/L calculation"""
-        trades = self.db.execute_query("SELECT decision, quantity, price FROM trades WHERE ticker = ? ORDER BY timestamp ASC", (ticker,))
+        if prediction_ids is not None and len(prediction_ids) == 0:
+            return 0
+        if prediction_ids:
+            placeholders = ",".join("?" * len(prediction_ids))
+            query = f"SELECT decision, quantity, price FROM trades WHERE ticker = ? AND prediction_id IN ({placeholders}) ORDER BY timestamp ASC"
+            trades = self.db.execute_query(query, (ticker, *prediction_ids))
+        else:
+            trades = self.db.execute_query("SELECT decision, quantity, price FROM trades WHERE ticker = ? ORDER BY timestamp ASC", (ticker,))
         buys = [] # List of (quantity, price)
         realized_pl = 0
         
@@ -57,16 +64,44 @@ class DetailedReportGenerator:
                         sell_qty = 0
         return realized_pl
 
-    def get_trading_statistics(self) -> Dict[str, Any]:
+    def get_trading_statistics(self, prediction_ids: Optional[List[int]] = None) -> Dict[str, Any]:
         """
         거래 통계를 계산하여 반환한다.
+        prediction_ids가 주어진 경우 해당 Cycle의 거래만 집계한다.
         """
+        if prediction_ids is not None and len(prediction_ids) == 0:
+            return {
+                "total_trades": 0,
+                "winning_trades": 0,
+                "losing_trades": 0,
+                "break_even_trades": 0,
+                "win_rate": 0.0,
+                "avg_winning": 0.0,
+                "avg_losing": 0.0,
+                "avg_pl": 0.0,
+                "gross_profit": 0.0,
+                "gross_loss": 0.0,
+                "profit_factor": float('inf')
+            }
+
         all_realized_pls = []
         
-        tickers = self.db.execute_query("SELECT DISTINCT ticker FROM trades")
+        if prediction_ids:
+            placeholders = ",".join("?" * len(prediction_ids))
+            query_tickers = f"SELECT DISTINCT ticker FROM trades WHERE prediction_id IN ({placeholders})"
+            tickers = self.db.execute_query(query_tickers, tuple(prediction_ids))
+        else:
+            tickers = self.db.execute_query("SELECT DISTINCT ticker FROM trades")
+
         for t in tickers:
             ticker = t[0]
-            ticker_trades = self.db.execute_query("SELECT decision, quantity, price FROM trades WHERE ticker = ? ORDER BY timestamp ASC", (ticker,))
+            if prediction_ids:
+                placeholders = ",".join("?" * len(prediction_ids))
+                query_trades = f"SELECT decision, quantity, price FROM trades WHERE ticker = ? AND prediction_id IN ({placeholders}) ORDER BY timestamp ASC"
+                ticker_trades = self.db.execute_query(query_trades, (ticker, *prediction_ids))
+            else:
+                ticker_trades = self.db.execute_query("SELECT decision, quantity, price FROM trades WHERE ticker = ? ORDER BY timestamp ASC", (ticker,))
+
             buys = []
             for decision, qty, price in ticker_trades:
                 if decision == 'BUY':
@@ -224,7 +259,7 @@ class DetailedReportGenerator:
             "status": "SUCCESS"
         }
 
-    def generate_report(self):
+    def generate_report(self, prediction_ids: Optional[List[int]] = None):
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_path = os.path.join(self.report_dir, f"detailed_report_{timestamp_str}.md")
 
@@ -246,7 +281,7 @@ class DetailedReportGenerator:
         initial_row = self.db.execute_query("SELECT total_asset FROM portfolio ORDER BY id ASC LIMIT 1")
         initial_investment = initial_row[0][0] if initial_row else total_asset
 
-        stats = self.get_trading_statistics()
+        stats = self.get_trading_statistics(prediction_ids=prediction_ids)
         perf = self.get_portfolio_performance_metrics()
 
         with open(report_path, "w", encoding="utf-8") as f:
@@ -304,7 +339,14 @@ class DetailedReportGenerator:
             f.write("\n## 3. 상세 거래 내역\n\n")
             f.write("| 거래ID | Prediction ID | 시간 | 종목코드 | 종목명 | 최종 판단 | 거래가격 | 수량 | 거래금액 | 실현손익 |\n")
             f.write("| ---: | ---: | --- | :--- | :--- | :--- | ---: | ---: | ---: | ---: |\n")
-            trades_data = self.db.execute_query("SELECT id, prediction_id, timestamp, ticker, decision, price, quantity FROM trades ORDER BY timestamp DESC")
+            if prediction_ids is not None and len(prediction_ids) == 0:
+                trades_data = []
+            elif prediction_ids:
+                placeholders = ",".join("?" * len(prediction_ids))
+                trades_query = f"SELECT id, prediction_id, timestamp, ticker, decision, price, quantity FROM trades WHERE prediction_id IN ({placeholders}) ORDER BY timestamp DESC"
+                trades_data = self.db.execute_query(trades_query, tuple(prediction_ids))
+            else:
+                trades_data = self.db.execute_query("SELECT id, prediction_id, timestamp, ticker, decision, price, quantity FROM trades ORDER BY timestamp DESC")
             
             # Precalculate PL for trades to display
             for t in trades_data:
@@ -314,7 +356,7 @@ class DetailedReportGenerator:
                 # Realized P/L only for SELL
                 pl_str = "-"
                 if t[4] == 'SELL':
-                    pl = self._calculate_realized_pl(t[3]) # Simplified per ticker
+                    pl = self._calculate_realized_pl(t[3], prediction_ids=prediction_ids) # Simplified per ticker
                     pl_str = f"{pl:,.0f}"
                 
                 f.write(f"| {t[0]} | {t[1]} | {time_str} | {t[3]} | {self._get_ticker_name(t[3])} | {t[4]} | {t[5]:,.0f} | {t[6]} | {amount:,.0f} | {pl_str} |\n")
@@ -323,14 +365,29 @@ class DetailedReportGenerator:
             f.write("\n## 4. 종목별 거래 요약\n\n")
             f.write("| 종목코드 | 종목명 | 매수횟수 | 매수수량 | 총 매수금액 | 매도횟수 | 매도수량 | 총 매도금액 | 실현손익 |\n")
             f.write("| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
-            tickers = self.db.execute_query("SELECT DISTINCT ticker FROM trades")
+            if prediction_ids is not None and len(prediction_ids) == 0:
+                tickers = []
+            elif prediction_ids:
+                placeholders = ",".join("?" * len(prediction_ids))
+                tickers = self.db.execute_query(f"SELECT DISTINCT ticker FROM trades WHERE prediction_id IN ({placeholders})", tuple(prediction_ids))
+            else:
+                tickers = self.db.execute_query("SELECT DISTINCT ticker FROM trades")
+
             for t in tickers:
                 ticker = t[0]
-                buy_data = self.db.execute_query("SELECT COUNT(*), SUM(quantity), SUM(quantity * price) FROM trades WHERE ticker = ? AND decision = 'BUY'", (ticker,))
-                sell_data = self.db.execute_query("SELECT COUNT(*), SUM(quantity), SUM(quantity * price) FROM trades WHERE ticker = ? AND decision = 'SELL'", (ticker,))
+                if prediction_ids:
+                    placeholders = ",".join("?" * len(prediction_ids))
+                    buy_query = f"SELECT COUNT(*), SUM(quantity), SUM(quantity * price) FROM trades WHERE ticker = ? AND decision = 'BUY' AND prediction_id IN ({placeholders})"
+                    sell_query = f"SELECT COUNT(*), SUM(quantity), SUM(quantity * price) FROM trades WHERE ticker = ? AND decision = 'SELL' AND prediction_id IN ({placeholders})"
+                    buy_data = self.db.execute_query(buy_query, (ticker, *prediction_ids))
+                    sell_data = self.db.execute_query(sell_query, (ticker, *prediction_ids))
+                else:
+                    buy_data = self.db.execute_query("SELECT COUNT(*), SUM(quantity), SUM(quantity * price) FROM trades WHERE ticker = ? AND decision = 'BUY'", (ticker,))
+                    sell_data = self.db.execute_query("SELECT COUNT(*), SUM(quantity), SUM(quantity * price) FROM trades WHERE ticker = ? AND decision = 'SELL'", (ticker,))
+
                 b = buy_data[0]
                 s = sell_data[0]
-                pl = self._calculate_realized_pl(ticker)
+                pl = self._calculate_realized_pl(ticker, prediction_ids=prediction_ids)
                 f.write(f"| {ticker} | {self._get_ticker_name(ticker)} | {b[0] or 0} | {b[1] or 0} | {b[2] or 0:,.0f} | {s[0] or 0} | {s[1] or 0} | {s[2] or 0:,.0f} | {pl:,.0f} |\n")
 
             # 5. 자산 구성
