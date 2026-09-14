@@ -85,26 +85,40 @@ def test_overall_status_gemini_batch_failure():
 
 
 def test_overall_status_tavily_failure_non_critical():
-    """Scenario 7: Tavily search fails but Claude & Consensus succeed -> Overall status SUCCESS"""
+    """Scenario 7: Tavily search fails (Candidate status PARTIAL) but Claude & Consensus succeed -> Overall status SUCCESS"""
     executor = RuntimeExecutor()
     cycle_data = {
         "prediction_ids": [1],
         "candidate_summary": [
-            {"ticker": "005930", "status": "SUCCESS", "consensus_method": "validated_by_claude"}
+            {"ticker": "005930", "status": "PARTIAL", "consensus_method": "validated_by_claude"}
         ]
     }
     status = executor._calculate_overall_status(cycle_data)
     assert status == "SUCCESS"
 
 
-def test_overall_status_portfolio_partial_failure():
-    """Scenario 8 & 9: Portfolio execution failure on some candidate -> PARTIAL"""
+def test_overall_status_success_and_partial():
+    """Scenario 8: SUCCESS + PARTIAL -> Overall status SUCCESS"""
     executor = RuntimeExecutor()
     cycle_data = {
         "prediction_ids": [1, 2],
         "candidate_summary": [
             {"ticker": "005930", "status": "SUCCESS", "consensus_method": "validated_by_claude"},
             {"ticker": "000660", "status": "PARTIAL", "consensus_method": "validated_by_claude"}
+        ]
+    }
+    status = executor._calculate_overall_status(cycle_data)
+    assert status == "SUCCESS"
+
+
+def test_overall_status_gemini_missing_analysis_partial():
+    """Scenario 9: Gemini missing analysis for candidate (FAILED) + SUCCESS -> PARTIAL"""
+    executor = RuntimeExecutor()
+    cycle_data = {
+        "prediction_ids": [1],
+        "candidate_summary": [
+            {"ticker": "005930", "status": "SUCCESS", "consensus_method": "validated_by_claude"},
+            {"ticker": "000660", "status": "FAILED", "consensus_method": "gemini_analysis_missing"}
         ]
     }
     status = executor._calculate_overall_status(cycle_data)

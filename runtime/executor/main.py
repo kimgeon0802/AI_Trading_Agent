@@ -140,12 +140,12 @@ class RuntimeExecutor:
             
         statuses = [c["status"] for c in candidate_summary]
         
-        if all(s == "SUCCESS" for s in statuses):
-            return "SUCCESS"
-        elif all(s in ("FALLBACK", "FAILED") for s in statuses):
+        if all(s in ("FALLBACK", "FAILED") for s in statuses):
             return "FAILED"
-        else:
+        elif any(s in ("FALLBACK", "FAILED") for s in statuses):
             return "PARTIAL"
+        else:
+            return "SUCCESS"
 
     async def run_cycle(self, market_condition=None) -> dict:
 
@@ -253,6 +253,11 @@ class RuntimeExecutor:
             gemini_analysis = next((a for a in batch_result.get("analyses", []) if a["ticker"] == ticker), None)
             if not gemini_analysis:
                 logger.warning(f"Analysis missing for {ticker}, skipping.")
+                candidate_summary.append({
+                    "ticker": ticker,
+                    "status": "FAILED",
+                    "consensus_method": "gemini_analysis_missing"
+                })
                 continue
 
             # Traceability
@@ -264,9 +269,12 @@ class RuntimeExecutor:
             
             # Tavily Search
             search_results = []
+            is_tavily_failed = False
             status, results = self.agent.tavily_provider.search(f"{ticker} 최신 뉴스")
             if status == APIStatus.SUCCESS:
                 search_results.extend(results)
+            else:
+                is_tavily_failed = True
 
             # Claude Analysis & Consensus
             decision_result = self.agent.execute_single(
@@ -278,7 +286,13 @@ class RuntimeExecutor:
             
             is_fallback = decision_result.get("is_fallback", False) if decision_result else True
             method = decision_result.get("consensus", {}).get("method", "fallback_hold") if decision_result else "fallback_hold"
-            cand_status = "FALLBACK" if is_fallback else "SUCCESS"
+            
+            if is_fallback:
+                cand_status = "FALLBACK"
+            elif is_tavily_failed:
+                cand_status = "PARTIAL"
+            else:
+                cand_status = "SUCCESS"
             
             # 6. PositionSizer & PortfolioManager Execution
             current_price = next((d for d in gemini_dataset if d["ticker"] == ticker), {}).get("price_data", {}).get("current", 0)
@@ -290,7 +304,8 @@ class RuntimeExecutor:
                     )
                 except Exception as e:
                     logger.error(f"Portfolio execution failed for {ticker}: {e}")
-                    cand_status = "PARTIAL"
+                    if cand_status != "FALLBACK":
+                        cand_status = "PARTIAL"
 
             candidate_summary.append({
                 "ticker": ticker,
@@ -352,7 +367,7 @@ class RuntimeExecutor:
             # Execute
             decision_result = self.agent.execute(market_data, prediction_id)
             is_fallback = decision_result.get("is_fallback", False) if decision_result else True
-            method = decision_result.get("consensus", {}).get("method", "validated_by_claude") if decision_result else "fallback_hold"
+            method = decision_result.get("consensus", {}).get("method", "fallback_hold") if decision_result else "fallback_hold"
             cand_status = "FALLBACK" if is_fallback else "SUCCESS"
             
             # Portfolio execution logic (holding over from original)
@@ -365,7 +380,8 @@ class RuntimeExecutor:
                     )
                 except Exception as e:
                     logger.error(f"Portfolio execution failed for {target_ticker}: {e}")
-                    cand_status = "PARTIAL"
+                    if cand_status != "FALLBACK":
+                        cand_status = "PARTIAL"
 
             candidate_summary.append({
                 "ticker": target_ticker,
