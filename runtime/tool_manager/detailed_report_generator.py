@@ -118,17 +118,149 @@ class DetailedReportGenerator:
             "profit_factor": profit_factor
         }
 
+    def get_portfolio_performance_metrics(self) -> Dict[str, Any]:
+        """
+        포트폴리오 성과 지표 (Daily Return, Cumulative Return, MDD) 계산
+        - total_asset > 0 유효 스냅샷만 정제 (임시 스냅샷 제거)
+        - 외부 입출금 (delta_cash == delta_total_asset & no trade) 감지 및 TWR 보정
+        - snapshot 부족시 INSUFFICIENT_DATA 안전 반환
+        """
+        rows = self.db.execute_query(
+            "SELECT cash, total_asset, timestamp FROM portfolio WHERE total_asset > 0 ORDER BY timestamp ASC, id ASC"
+        )
+
+        if not rows or len(rows) < 2:
+            return {
+                "daily_return": 0.0,
+                "cumulative_return": 0.0,
+                "mdd": 0.0,
+                "status": "INSUFFICIENT_DATA"
+            }
+
+        # Fetch trades timestamps to detect trade existence
+        trades_rows = self.db.execute_query("SELECT timestamp FROM trades ORDER BY timestamp ASC")
+        trade_timestamps = set(t[0] for t in trades_rows if t and t[0])
+
+        daily_eod_map = {}
+        for cash, total_asset, ts in rows:
+            if ts:
+                date_str = ts.split("T")[0] if "T" in ts else ts.split(" ")[0]
+                daily_eod_map[date_str] = (cash, total_asset, ts)
+
+        daily_dates = sorted(daily_eod_map.keys())
+
+        I_k = 1.0
+        peak_I = 1.0
+        max_drawdown = 0.0
+
+        for i in range(1, len(rows)):
+            prev_cash, prev_asset, prev_ts = rows[i-1]
+            curr_cash, curr_asset, curr_ts = rows[i]
+
+            if prev_asset <= 0:
+                continue
+
+            delta_cash = curr_cash - prev_cash
+            delta_asset = curr_asset - prev_asset
+
+            is_cash_flow = False
+            if abs(delta_cash - delta_asset) < 1e-4 and abs(delta_cash) > 1e-4:
+                if curr_ts not in trade_timestamps:
+                    is_cash_flow = True
+
+            if is_cash_flow:
+                C_k = delta_asset
+                if C_k > 0:
+                    denom = prev_asset + C_k
+                    r_k = (curr_asset - prev_asset - C_k) / denom if denom > 0 else 0.0
+                else:
+                    denom = prev_asset - abs(C_k)
+                    r_k = (curr_asset - (prev_asset - abs(C_k))) / denom if denom > 0 else 0.0
+            else:
+                denom = prev_asset
+                r_k = (curr_asset - prev_asset) / denom if denom > 0 else 0.0
+
+            I_k = I_k * (1.0 + r_k)
+            if I_k > peak_I:
+                peak_I = I_k
+
+            dd = (peak_I - I_k) / peak_I if peak_I > 0 else 0.0
+            if dd > max_drawdown:
+                max_drawdown = dd
+
+        cumulative_return = (I_k - 1.0) * 100.0
+        mdd = max_drawdown * 100.0
+
+        daily_return = 0.0
+        if len(daily_dates) >= 2:
+            prev_d = daily_dates[-2]
+            curr_d = daily_dates[-1]
+            prev_c, prev_a, _ = daily_eod_map[prev_d]
+            curr_c, curr_a, _ = daily_eod_map[curr_d]
+            d_cash = curr_c - prev_c
+            d_asset = curr_a - prev_a
+            if abs(d_cash - d_asset) < 1e-4 and abs(d_cash) > 1e-4:
+                C_k = d_asset
+                denom = prev_a + C_k if C_k > 0 else prev_a - abs(C_k)
+                daily_return = ((curr_a - prev_a - C_k) / denom * 100.0) if denom > 0 else 0.0
+            else:
+                daily_return = ((curr_a - prev_a) / prev_a * 100.0) if prev_a > 0 else 0.0
+        elif len(rows) >= 2:
+            prev_c, prev_a, prev_ts = rows[-2]
+            curr_c, curr_a, curr_ts = rows[-1]
+            d_cash = curr_c - prev_c
+            d_asset = curr_a - prev_a
+            if abs(d_cash - d_asset) < 1e-4 and abs(d_cash) > 1e-4:
+                C_k = d_asset
+                denom = prev_a + C_k if C_k > 0 else prev_a - abs(C_k)
+                daily_return = ((curr_a - prev_a - C_k) / denom * 100.0) if denom > 0 else 0.0
+            else:
+                daily_return = ((curr_a - prev_a) / prev_a * 100.0) if prev_a > 0 else 0.0
+
+        return {
+            "daily_return": daily_return,
+            "cumulative_return": cumulative_return,
+            "mdd": mdd,
+            "status": "SUCCESS"
+        }
+
     def generate_report(self):
-        # ... (same as before until metrics)
-        
-        # Calculate summary metrics (as implemented before)
-        # ...
-        
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = os.path.join(self.report_dir, f"detailed_report_{timestamp_str}.md")
+
+        portfolio = self.db.get_portfolio()
+        cash = portfolio["cash"] if portfolio else 0.0
+        holdings = self.db.get_holdings()
+
+        stock_value = 0.0
+        for h in holdings:
+            price = self.get_latest_price(h["ticker"])
+            if price is not None:
+                stock_value += h["quantity"] * price
+            else:
+                logger.error(f"Cannot generate report due to missing price for {h['ticker']}")
+                raise ValueError(f"Price missing for {h['ticker']}")
+
+        total_asset = cash + stock_value
+
+        initial_row = self.db.execute_query("SELECT total_asset FROM portfolio ORDER BY id ASC LIMIT 1")
+        initial_investment = initial_row[0][0] if initial_row else total_asset
+
         stats = self.get_trading_statistics()
-        
+        perf = self.get_portfolio_performance_metrics()
+
         with open(report_path, "w", encoding="utf-8") as f:
-            # ... (sections 1-2)
-            
+            f.write(f"# 상세 투자 보고서 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})\n\n")
+            f.write("## 1. 포트폴리오 요약\n\n")
+            f.write("| 항목 | 금액 |\n")
+            f.write("| :--- | ---: |\n")
+            f.write(f"| 초기 자본금 | {initial_investment:,.0f}원 |\n")
+            f.write(f"| 현재 총 자산 | {total_asset:,.0f}원 |\n")
+            f.write(f"| 보유 현금 | {cash:,.0f}원 |\n")
+            f.write(f"| 주식 평가액 | {stock_value:,.0f}원 |\n")
+            f.write(f"| 누적 손익 | {(total_asset - initial_investment):,.0f}원 |\n")
+            f.write(f"| 누적 수익률 | {((total_asset - initial_investment) / initial_investment * 100) if initial_investment > 0 else 0.0:+.2f}% |\n\n")
+
             # 2.5 Trading Performance (New)
             f.write("## 2.5 거래 성과 요약\n\n")
             f.write("| 항목 | 값 |\n")
@@ -142,6 +274,15 @@ class DetailedReportGenerator:
             f.write(f"| 평균 손실 | {stats['avg_losing']:,.0f}원 |\n")
             f.write(f"| 평균 손익 | {stats['avg_pl']:,.0f}원 |\n")
             f.write(f"| Profit Factor | {stats['profit_factor'] if stats['profit_factor'] != float('inf') else 'N/A' :.2f} |\n\n")
+
+            # 2.6 포트폴리오 성과 지표 (STEP 2-3)
+            f.write("## 2.6 포트폴리오 성과 지표\n\n")
+            f.write("| 항목 | 값 |\n")
+            f.write("| :--- | ---: |\n")
+            f.write(f"| Daily Return | {perf['daily_return']:+.2f}% |\n")
+            f.write(f"| Cumulative Return | {perf['cumulative_return']:+.2f}% |\n")
+            f.write(f"| Maximum Drawdown (MDD) | {perf['mdd']:.2f}% |\n")
+            f.write(f"| 데이터 상태 | {perf['status']} |\n\n")
 
             # ... (rest of sections 3-6)
                 
