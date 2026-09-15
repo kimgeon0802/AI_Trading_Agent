@@ -13,33 +13,22 @@ def diagnose():
 
     # [1] Raw OHLCV
     print(f"\n[1] Testing get_market_ohlcv_by_ticker:")
-    ohlcv = stock.get_market_ohlcv_by_ticker(date, ticker=ticker)
+    ohlcv = stock.get_market_ohlcv_by_ticker(date)
     print(f"Result type: {type(ohlcv)}")
-    print(ohlcv)
-    if not ohlcv.empty:
-        print(f"Close value: {ohlcv.iloc[0].get('종가', 'N/A')}")
-    else:
-        print("DataFrame is empty.")
+    print(ohlcv.head())
 
     # [2] Raw Market Cap
     print(f"\n[2] Testing get_market_cap_by_ticker:")
-    cap = stock.get_market_cap_by_ticker(date, ticker=ticker)
+    # This likely expects ticker as an argument according to the error in [1] earlier, or maybe it returns market-wide. Let me check get_market_cap_by_ticker docstring.
+    # Actually, for now, let's fix the known invalid calls.
+    cap = stock.get_market_cap_by_ticker(date)
     print(f"Result type: {type(cap)}")
-    print(cap)
-    if not cap.empty:
-        print(f"Market Cap value: {cap.iloc[0].get('시가총액', 'N/A')}")
-    else:
-        print("DataFrame is empty.")
+    print(cap.head())
 
     # [3] Collector OHLCV Logic Simulation (from collector code)
     print(f"\n[3] Simulating Collector OHLCV logic:")
     try:
-        # Based on collector logic for individual ticker
-        df = stock.get_market_ohlcv_by_ticker(date, ticker=ticker)
-        # Note: collector handles entire market, not single ticker in the main loop,
-        # but the logic for renaming should be consistent.
         # The collector uses stock.get_market_ohlcv_by_ticker(request_date, market=market)
-        # Let's test the market-wide call which is what collector does
         df_market = stock.get_market_ohlcv_by_ticker(date, market=market)
         print(f"Market OHLCV DataFrame sample (head):")
         print(df_market.head(5))

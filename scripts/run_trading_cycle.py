@@ -318,7 +318,10 @@ async def main():
         # Detailed Trading Report
         # ----------------------------------------------------
 
-        detailed_gen = DetailedReportGenerator(db)
+        # 현재 수집된 시장 데이터에서 가격 매핑 생성
+        price_map = {row['ticker']: row['close'] for _, row in executor.market_pipeline.last_market_data.iterrows()} if hasattr(executor.market_pipeline, 'last_market_data') and executor.market_pipeline.last_market_data is not None else {}
+        
+        detailed_gen = DetailedReportGenerator(db, price_map=price_map)
 
         detailed_gen.generate_report(prediction_ids=prediction_ids)
 

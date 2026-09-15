@@ -74,7 +74,7 @@ class ResearchReportGenerator:
             f.write(f"# AI 연구 보고서 - {timestamp}\n\n")
             
             # 1. Summary
-            f.write("## 1. AI 의사결정 요약\n\n| 항목 | GPT 1차 분석 | Claude 2차 검증 |\n| --- | ---: | ---: |\n")
+            f.write("## 1. AI 의사결정 요약\n\n| 항목 | Gemini 1차 분석 | Claude 2차 검증 |\n| --- | ---: | ---: |\n")
             f.write(f"| 분석 건수 | {len(data)} | {sum(1 for r in data if r['claude_val'])} |\n")
             f.write(f"| 매수(BUY) | {sum(1 for r in data if r['gpt_opinion'] == 'BUY')} | - |\n")
             f.write(f"| 매도(SELL) | {sum(1 for r in data if r['gpt_opinion'] == 'SELL')} | - |\n")
@@ -84,7 +84,7 @@ class ResearchReportGenerator:
             f.write(f"| 거부(REJECT) | - | {sum(1 for r in data if r['claude_val'] == 'REJECT')} |\n\n")
             
             # Charts
-            f.write("## 2. GPT 1차 판단 분포\n\n```text\n")
+            f.write("## 2. Gemini 1차 판단 분포\n\n```text\n")
             f.write(self._generate_bar_chart({op: sum(1 for r in data if r['gpt_opinion'] == op) for op in ['BUY', 'SELL', 'HOLD']}))
             f.write("\n```\n\n")
             
@@ -93,8 +93,8 @@ class ResearchReportGenerator:
             f.write("\n```\n\n")
             
             # Tracking
-            f.write("## 4. GPT → Claude → Consensus 전체 의사결정 추적\n\n")
-            f.write("| ID | 종목 | GPT 의견 | Claude 검증 | 최종 판단 | 실제 거래 | 결과 |\n| --- | --- | --- | --- | --- | --- | --- |\n")
+            f.write("## 4. Gemini → Claude → Consensus 전체 의사결정 추적\n\n")
+            f.write("| ID | 종목 | Gemini 의견 | Claude 검증 | 최종 판단 | 실제 거래 | 결과 |\n| --- | --- | --- | --- | --- | --- | --- |\n")
             for r in data:
                 f.write(f"| {r['pid']} | {r['ticker']} | {r['gpt_opinion'] or '없음'} | {r['claude_val'] or '-'} | {r['consensus_decision'] or '-'} | {r['trade_decision'] or '미실행'} | {r['actual_result'] or '데이터 없음'} |\n")
             f.write("\n")
@@ -108,7 +108,7 @@ class ResearchReportGenerator:
                 success = metrics[model][decision]['success']
                 return f"{(success/total)*100:.1f}%" if total > 0 else "데이터 부족"
             
-            f.write(f"| GPT | {get_success('gpt', 'BUY')} | {get_success('gpt', 'SELL')} | {get_success('gpt', 'HOLD')} | 데이터 부족 |\n")
+            f.write(f"| Gemini | {get_success('gpt', 'BUY')} | {get_success('gpt', 'SELL')} | {get_success('gpt', 'HOLD')} | 데이터 부족 |\n")
             
             f.write("\n\n## Claude 검증 효과\n\n| Claude 검증 | 전체 | 거래 | 성공 | 성공률 |\n| --- | ---: | ---: | ---: | ---: |\n")
             for res in ['PASS', 'WARNING', 'REJECT']:

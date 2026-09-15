@@ -8,30 +8,24 @@ from market.market_data_collector import MarketDataCollector
 logger = logging.getLogger("DetailedReportGenerator")
 
 class DetailedReportGenerator:
-    def __init__(self, db_manager):
+    def __init__(self, db_manager, price_map: Optional[Dict[str, float]] = None):
         self.db = db_manager
         self.report_dir = "data/reports/detailed/"
         os.makedirs(self.report_dir, exist_ok=True)
         self.ticker_map = {"005930": "삼성전자"}
+        self.price_map = price_map or {}
 
     def _get_ticker_name(self, ticker):
         return self.ticker_map.get(ticker, ticker)
 
     def get_latest_price(self, ticker: str) -> Optional[float]:
         """
-        MarketDataCollector를 사용하여 특정 종목의 최신 가격을 조회한다.
+        전달받은 price_map에서 특정 종목의 가격을 조회한다.
         """
-        collector = MarketDataCollector()
-        try:
-            market_df = collector.collect_all_markets()
-            price_row = market_df[market_df["ticker"] == ticker]
-            if not price_row.empty:
-                return float(price_row.iloc[0]["close"])
-            else:
-                logger.warning(f"Price not found for {ticker}")
-                return None
-        except Exception as e:
-            logger.error(f"Failed to fetch price for {ticker}: {e}")
+        if ticker in self.price_map:
+            return self.price_map[ticker]
+        else:
+            logger.warning(f"Price not found in price_map for {ticker}")
             return None
 
     def _calculate_realized_pl(self, ticker, prediction_ids: Optional[List[int]] = None):
@@ -308,7 +302,9 @@ class DetailedReportGenerator:
             f.write(f"| 평균 수익 | {stats['avg_winning']:,.0f}원 |\n")
             f.write(f"| 평균 손실 | {stats['avg_losing']:,.0f}원 |\n")
             f.write(f"| 평균 손익 | {stats['avg_pl']:,.0f}원 |\n")
-            f.write(f"| Profit Factor | {stats['profit_factor'] if stats['profit_factor'] != float('inf') else 'N/A' :.2f} |\n\n")
+            factor = stats['profit_factor']
+            factor_str = f"{factor:.2f}" if factor != float('inf') else "N/A"
+            f.write(f"| Profit Factor | {factor_str} |\n\n")
 
             # 2.6 포트폴리오 성과 지표 (STEP 2-3)
             f.write("## 2.6 포트폴리오 성과 지표\n\n")

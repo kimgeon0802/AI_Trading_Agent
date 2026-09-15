@@ -7,10 +7,12 @@ class MarketPipeline:
         self.collector = MarketDataCollector()
         self.screening_engine = ScreeningEngine()
         self.validator = CandidateValidator()
+        self.last_market_data = None
 
     def run(self):
         # 1. 전체 시장 데이터 수집
         market_df = self.collector.collect_all_markets()
+        self.last_market_data = market_df
         print(f"[INFO] 전체 시장 데이터: {len(market_df)}개")
 
         # 2. 1차 스크리닝
