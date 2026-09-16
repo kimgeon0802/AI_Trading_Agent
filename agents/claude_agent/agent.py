@@ -105,10 +105,23 @@ class ClaudeAgent(BaseTradingAgent):
             "Return the evaluation in structured JSON format."
         )
 
-        status, response_text = self.client.get_completion(self.system_prompt, user_prompt)
+        status, message = self.client.get_completion(self.system_prompt, user_prompt)
 
-        if status.value != "SUCCESS" or not response_text:
+        if status.value != "SUCCESS" or not message:
             return None
+        
+        # Diagnostic logging
+        stop_reason = getattr(message, 'stop_reason', 'unknown')
+        content_blocks = getattr(message, 'content', [])
+        logger.info(f"Claude Response Diagnostics: stop_reason={stop_reason}, content_blocks_count={len(content_blocks)}")
+        for i, block in enumerate(content_blocks):
+            logger.info(f"Block {i}: type={getattr(block, 'type', 'unknown')}")
+
+        # Extract text from first content block
+        response_text = content_blocks[0].text if len(content_blocks) > 0 else ""
+        
+        # Diagnostic logging for response
+        logger.info(f"Claude Response: type={type(response_text)}, length={len(response_text)}, snippet={repr(response_text[:100])}")
 
         return ClaudeParser.parse_response(response_text)
 

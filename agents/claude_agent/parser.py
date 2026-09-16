@@ -18,24 +18,18 @@ class ClaudeParser:
 
         def try_parse(text):
             try:
-                # 1. 시도: 직접 파싱
-                data = json.loads(text.strip(), strict=False)
+                # raw_decode는 JSON 문자열과 그 이후의 데이터를 분리해줍니다.
+                # data는 파싱된 JSON, end는 JSON이 끝나는 지점입니다.
+                data, end = json.JSONDecoder().raw_decode(text.strip())
+                # 성공 시 남은 문자열이 whitespace 외에 더 있는지는 검사하지 않음 (Extra data 허용)
                 if ClaudeParser._validate_schema(data):
                     return data
                 else:
                     logger.error("Schema validation failed.")
                     return None
-            except json.JSONDecodeError as e:
-                start = max(0, e.pos - 50)
-                end = min(len(text), e.pos + 50)
-                logger.error(
-                    f"Claude JSON parse failed: msg={e.msg}, pos={e.pos}, lineno={e.lineno}, colno={e.colno}, "
-                    f"context={repr(text[start:end])}"
-                )
-                return None
-            except (TypeError, ValueError) as e:
-                logger.error(f"Claude JSON parse error (non-decode): {e}")
-                return None
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
+            return None
 
         # 1. 전체 텍스트 파싱 시도
         res = try_parse(response_text)

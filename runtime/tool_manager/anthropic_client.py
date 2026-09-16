@@ -36,13 +36,13 @@ class AnthropicClient:
             try:
                 message = self.client.messages.create(
                     model=self.model,
-                    max_tokens=1024,
+                    max_tokens=4096,
                     system=system_prompt,
                     messages=[
                         {"role": "user", "content": user_prompt}
                     ]
                 )
-                return APIStatus.SUCCESS, message.content[0].text
+                return APIStatus.SUCCESS, message
             except (anthropic.BadRequestError, anthropic.AuthenticationError) as e:
                 # These are NOT retryable
                 logger.error(f"Anthropic API Non-Retryable Error: {e}")
