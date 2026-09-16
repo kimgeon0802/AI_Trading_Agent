@@ -9,53 +9,58 @@ class ClaudeParser:
     def parse_response(response_text: str) -> Optional[Dict[str, Any]]:
         """
         Claude 응답을 파싱하여 JSON으로 추출하고 유효성 검증을 수행합니다.
+        중첩 JSON과 마크다운 코드블록을 안전하게 처리합니다.
         """
         if not response_text:
             logger.error("Empty response text.")
             return None
 
+        import json
         import re
 
-        # 1. Markdown code block 내부의 텍스트가 있다면 우선 추출
-        candidate_text = response_text
-        block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
-        if block_match:
-            candidate_text = block_match.group(1)
-
-        # 2. candidate_text에서 가장 바깥쪽 { 와 } 위치 탐색 및 파싱
-        start = candidate_text.find('{')
-        end = candidate_text.rfind('}')
-        if start != -1 and end != -1 and end > start:
-            json_str = candidate_text[start : end + 1]
+        def try_parse(text):
             try:
-                data = json.loads(json_str, strict=False)
+                # 1. 시도: 직접 파싱
+                data = json.loads(text.strip(), strict=False)
                 if ClaudeParser._validate_schema(data):
                     return data
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 pass
+            return None
 
-        # 3. candidate_text에서 파싱 실패 시, 전체 response_text에서 가장 바깥쪽 { 와 } 탐색
-        if candidate_text != response_text:
-            start = response_text.find('{')
-            end = response_text.rfind('}')
-            if start != -1 and end != -1 and end > start:
-                json_str = response_text[start : end + 1]
-                try:
-                    data = json.loads(json_str, strict=False)
-                    if ClaudeParser._validate_schema(data):
-                        return data
-                except json.JSONDecodeError:
-                    pass
+        # 1. 전체 텍스트 파싱 시도 (가장 최적)
+        res = try_parse(response_text)
+        if res: return res
 
-        # 4. 전체 텍스트 직접 json.loads 시도
-        try:
-            data = json.loads(response_text.strip(), strict=False)
-            if ClaudeParser._validate_schema(data):
-                return data
-        except json.JSONDecodeError:
-            pass
+        # 2. 마크다운 코드 블록 시도
+        match = re.search(r'```(?:json)?\s*(.*?)\s*```', response_text, re.DOTALL)
+        if match:
+            res = try_parse(match.group(1))
+            if res: return res
 
-        logger.error(f"Failed to parse Claude response. Text: {response_text[:100]}...")
+        # 3. 구조적 추출 (balanced braces 기반 중첩 JSON 처리)
+        def extract_balanced(text):
+            stack = []
+            start = -1
+            for i, char in enumerate(text):
+                if char == '{':
+                    if not stack:
+                        start = i
+                    stack.append('{')
+                elif char == '}':
+                    if stack:
+                        stack.pop()
+                        if not stack and start != -1:
+                            # 밸런스가 맞음, 파싱 시도
+                            candidate = text[start : i + 1]
+                            res = try_parse(candidate)
+                            if res: return res
+            return None
+
+        res = extract_balanced(response_text)
+        if res: return res
+
+        logger.error(f"Failed to parse Claude response. Raw text snippet: {response_text[:100]}...")
         return None
 
     @staticmethod
