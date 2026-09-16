@@ -5,26 +5,26 @@ logger = logging.getLogger("ConsensusManager")
 
 class ConsensusManager:
     @staticmethod
-    def get_consensus(gpt_result: dict, claude_result: dict) -> dict:
+    def get_consensus(analysis_result: dict, claude_result: dict) -> dict:
         """
-        Final decision maker based on GPT decision and Claude's evaluation.
+        Final decision maker based on analysis result and Claude's evaluation.
         """
-        # Fallback if GPT failed
-        if not gpt_result:
-            return ConsensusManager._fallback_hold("GPT failed, cannot proceed.")
+        # Fallback if analysis failed
+        if not analysis_result:
+            return ConsensusManager._fallback_hold("1st-stage analysis failed, cannot proceed.")
 
-        # If GPT succeeded, check Claude's evaluation
+        # If analysis succeeded, check Claude's evaluation
         if not claude_result:
-            return ConsensusManager._fallback_hold("Claude failed to evaluate GPT decision.")
+            return ConsensusManager._fallback_hold("Claude failed to evaluate analysis result.")
         
         evaluation = claude_result["evaluation"]
         
         # Risk Gate Logic
         if evaluation == "PASS":
             return {
-                "decision": gpt_result["decision"],
-                "confidence": gpt_result["confidence"],
-                "reasoning": f"GPT decision validated by Claude: {gpt_result['reasoning']}",
+                "decision": analysis_result["decision"],
+                "confidence": analysis_result["confidence"],
+                "reasoning": f"Analysis result validated by Claude: {analysis_result['reasoning']}",
                 "method": "validated_by_claude"
             }
         elif evaluation == "WARNING":

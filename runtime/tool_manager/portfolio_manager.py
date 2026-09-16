@@ -40,7 +40,7 @@ class PortfolioManager:
             "holdings": holdings
         }
 
-    def execute_decision(self, ticker, decision_data, current_price, prediction_id=None):
+    def execute_decision(self, ticker, decision_data, current_price, prediction_id=None, market_df=None):
         decision = decision_data["decision"]
         confidence = decision_data["confidence"]
         timestamp = datetime.now().isoformat()
@@ -56,7 +56,7 @@ class PortfolioManager:
             logger.info(f"HOLD decision for {ticker}. No action taken.")
         
         # Update total asset value
-        self._update_total_asset(timestamp)
+        self._update_total_asset(timestamp, market_df=market_df)
 
     def _handle_buy(self, ticker, available_cash, price, confidence, timestamp, prediction_id=None):
         # MVP logic: use 20% of cash for BUY (To be replaced by PositionSizer output)

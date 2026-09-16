@@ -301,11 +301,12 @@ class RuntimeExecutor:
             if decision_result:
                 try:
                     self.portfolio_manager.execute_decision(
-                        ticker, decision_result, current_price, prediction_id=prediction_id
+                        ticker,
+                        decision_result,
+                        current_price,
+                        prediction_id=prediction_id,
+                        market_df=self.market_pipeline.last_market_data
                     )
-                    
-                    # Update portfolio asset using current pipeline market data
-                    self.portfolio_manager._update_total_asset(datetime.now().isoformat(), market_df=self.market_pipeline.last_market_data)
                 except Exception as e:
                     logger.error(f"Portfolio execution failed for {ticker}: {e}")
                     if cand_status != "FALLBACK":
@@ -380,7 +381,11 @@ class RuntimeExecutor:
             if decision_result:
                 try:
                     self.portfolio_manager.execute_decision(
-                        target_ticker, decision_result, current_price, prediction_id=prediction_id
+                        target_ticker,
+                        decision_result,
+                        current_price,
+                        prediction_id=prediction_id,
+                        market_df=self.market_pipeline.last_market_data
                     )
                 except Exception as e:
                     logger.error(f"Portfolio execution failed for {target_ticker}: {e}")

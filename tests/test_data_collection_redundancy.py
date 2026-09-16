@@ -47,4 +47,7 @@ def test_historical_ohlcv_deduplication():
         
     # Verify
     assert mock_collector.get_historical_ohlcv.call_count == len(unique_tickers)
-    assert mock_collector.get_historical_ohlcv.call_args_list[0][0][0] == "005930"
+    
+    # Collect all called tickers in order
+    called_tickers = [args[0][0] for args in mock_collector.get_historical_ohlcv.call_args_list]
+    assert sorted(called_tickers) == sorted(unique_tickers)
