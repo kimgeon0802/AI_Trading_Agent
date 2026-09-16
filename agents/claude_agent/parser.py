@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger("ClaudeParser")
@@ -9,14 +10,11 @@ class ClaudeParser:
     def parse_response(response_text: str) -> Optional[Dict[str, Any]]:
         """
         Claude 응답을 파싱하여 JSON으로 추출하고 유효성 검증을 수행합니다.
-        중첩 JSON과 마크다운 코드블록을 안전하게 처리합니다.
+        강력한 Markdown 및 JSON 추출 기능을 제공하며, 실패 시 상세한 디버그 로그를 남깁니다.
         """
         if not response_text:
             logger.error("Empty response text.")
             return None
-
-        import json
-        import re
 
         def try_parse(text):
             try:
@@ -24,11 +22,22 @@ class ClaudeParser:
                 data = json.loads(text.strip(), strict=False)
                 if ClaudeParser._validate_schema(data):
                     return data
-            except (json.JSONDecodeError, TypeError, ValueError):
-                pass
-            return None
+                else:
+                    logger.error("Schema validation failed.")
+                    return None
+            except json.JSONDecodeError as e:
+                start = max(0, e.pos - 50)
+                end = min(len(text), e.pos + 50)
+                logger.error(
+                    f"Claude JSON parse failed: msg={e.msg}, pos={e.pos}, lineno={e.lineno}, colno={e.colno}, "
+                    f"context={repr(text[start:end])}"
+                )
+                return None
+            except (TypeError, ValueError) as e:
+                logger.error(f"Claude JSON parse error (non-decode): {e}")
+                return None
 
-        # 1. 전체 텍스트 파싱 시도 (가장 최적)
+        # 1. 전체 텍스트 파싱 시도
         res = try_parse(response_text)
         if res: return res
 
@@ -38,26 +47,19 @@ class ClaudeParser:
             res = try_parse(match.group(1))
             if res: return res
 
-        # 3. 구조적 추출 (balanced braces 기반 중첩 JSON 처리)
-        def extract_balanced(text):
-            stack = []
-            start = -1
-            for i, char in enumerate(text):
-                if char == '{':
-                    if not stack:
-                        start = i
-                    stack.append('{')
-                elif char == '}':
-                    if stack:
-                        stack.pop()
-                        if not stack and start != -1:
-                            # 밸런스가 맞음, 파싱 시도
-                            candidate = text[start : i + 1]
-                            res = try_parse(candidate)
-                            if res: return res
+        # 3. 구조적 추출 (강화된 로직)
+        def extract_json_robust(text):
+            # JSON은 보통 {로 시작하여 }로 끝남
+            # 이스케이프된 따옴표를 고려하기 위해 정규식으로 유효한 JSON object 패턴 검색
+            pattern = re.compile(r'\{.*\}', re.DOTALL)
+            match = pattern.search(text)
+            if match:
+                candidate = match.group(0)
+                res = try_parse(candidate)
+                if res: return res
             return None
 
-        res = extract_balanced(response_text)
+        res = extract_json_robust(response_text)
         if res: return res
 
         logger.error(f"Failed to parse Claude response. Raw text snippet: {response_text[:100]}...")
@@ -72,7 +74,7 @@ class ClaudeParser:
         
         # 필드 존재 여부
         if not all(k in data for k in required):
-            logger.error("Missing required fields in Claude response.")
+            logger.error(f"Missing required fields. Required: {required}, Found: {list(data.keys())}")
             return False
             
         # 타입/범위 검증

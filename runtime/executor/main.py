@@ -34,7 +34,8 @@ logging.basicConfig(
     handlers=[
         logging.FileHandler(os.path.join(LOG_DIR, "runtime.log")),
         logging.StreamHandler()
-    ]
+    ],
+    force=True
 )
 
 logger = logging.getLogger("RuntimeExecutor")
