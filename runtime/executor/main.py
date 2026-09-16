@@ -22,11 +22,17 @@ from runtime.tool_manager.risk_manager import RiskManager
 # Logging Configuration
 # ============================================================
 
+# Ensure logs directory exists at the project root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOG_DIR = os.path.join(PROJECT_ROOT, "logs")
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("logs/runtime.log"),
+        logging.FileHandler(os.path.join(LOG_DIR, "runtime.log")),
         logging.StreamHandler()
     ]
 )
@@ -76,9 +82,6 @@ class RuntimeExecutor:
 
         # ----------------------------------------------------
         # Multi-AI Orchestrator
-        #
-        # GPT / Claude / Mock / Real / Consensus
-        # are handled inside the orchestrator.
         # ----------------------------------------------------
 
         logger.info(
@@ -121,10 +124,6 @@ class RuntimeExecutor:
             f"IS_REAL_AI_MODE={self.is_real_ai_mode}"
         )
 
-
-    # ========================================================
-    # Trading Cycle
-    # ========================================================
 
     # ========================================================
     # Trading Cycle
@@ -215,11 +214,13 @@ class RuntimeExecutor:
         # 2. Historical Data Fetch & Technical Analysis
         from market.market_data_collector import MarketDataCollector
         collector = MarketDataCollector()
-        historical_data_map = {}
-        for _, row in refined_df.iterrows():
-            ticker = row['ticker']
-            historical_data_map[ticker] = collector.get_historical_ohlcv(ticker, days=100)
         
+        # 2.1 Historical Data Optimization: Get all unique tickers first
+        unique_tickers = refined_df['ticker'].unique()
+        historical_data_map = {}
+        for ticker in unique_tickers:
+            historical_data_map[ticker] = collector.get_historical_ohlcv(ticker, days=100)
+            
         # 3. Market Data Adapter (Gemini Analysis Dataset Creation)
         portfolio_state = self.portfolio_manager.get_current_state()
         self.macro_manager.fetch_and_save_macro_data()
@@ -302,6 +303,9 @@ class RuntimeExecutor:
                     self.portfolio_manager.execute_decision(
                         ticker, decision_result, current_price, prediction_id=prediction_id
                     )
+                    
+                    # Update portfolio asset using current pipeline market data
+                    self.portfolio_manager._update_total_asset(datetime.now().isoformat(), market_df=self.market_pipeline.last_market_data)
                 except Exception as e:
                     logger.error(f"Portfolio execution failed for {ticker}: {e}")
                     if cand_status != "FALLBACK":

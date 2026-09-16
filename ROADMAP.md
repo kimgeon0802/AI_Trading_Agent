@@ -19,39 +19,35 @@
 
 ## Current Status
 - Gemini 3.1 Flash-Lite API 연동 성공 (HTTP 200).
-- Claude API 파이프라인 연결 성공.
-- Gemini 및 Claude 응답 파싱(JSON) 문제 해결 완료.
-- AI 파이프라인 Real E2E 동작 확인 (Gemini → Claude → Consensus 성공).
-- Portfolio 자산 평가(Valuation) 로직 개선 완료.
+- Claude API 파이프라인 연결 및 JSON Parser 로직 개선 완료.
+- Detailed/Research Report Generator 연결 및 성능 지표 구현 완료.
+- Trading Cycle / Report 연결 검증 완료 (Prediction IDs 필터링).
+- 일 2회 Trading Cycle 실행을 위한 OS Scheduler(Windows Task Scheduler) 설계 완료.
+- Trading Cycle의 오류 격리 및 복구 로직 검증 완료.
 
 ## Completed
-### Claude Parser (오늘 완료)
-- [완료 / 검증 완료] Markdown Code Fence, Nested JSON 구조 처리를 위한 JSON Parser 추출 로직 개선 (Commit: 06ddd16).
-- [완료 / 검증 완료] 테스트 코드(`tests/Block/test_nested_json.py`)를 통해 중첩 JSON 응답 파싱 검증 완료.
+### Reporting & Optimization
+- [완료 / 검증 완료] DetailedReportGenerator 성능 지표(Daily/Cumulative Return, MDD) 및 거래 통계 구현.
+- [완료 / 검증 완료] `price_map` 방식 도입을 통한 데이터 재수집 방지 및 효율화 (Commit: e984373).
+- [완료 / 검증 완료] Gemini 명칭 레이블 일괄 변경 및 오해 소지 제거.
 
-### STEP 3 Trading Cycle Status Tracking (완료)
-- [완료 / 검증 완료] `execute_single()` 내 fallback 상태 추적 및 prediction_ids, candidate summary 연결.
-- [완료 / 검증 완료] Cycle Status (SUCCESS/PARTIAL/FAILED) 집계 및 Fallback HOLD 로직 구분 구현 (Commit: 197966c 등 참조).
-
-### Portfolio & Reporting
-- [완료 / 검증 완료] Portfolio performance metrics 추가 및 Prediction IDs 기반 cycle filtering 구현.
+### Trading Cycle
+- [완료 / 검증 완료] 시스템 오류 격리(Gemini/Tavily/Claude/Report 장애 처리) 및 포트폴리오 안전성 검증.
+- [완료 / 검증 완료] 일 2회 완전한 Trading Cycle 실행 구조 및 데이터 독립성 확인.
 
 ## Known Issues
-### BLOCKER: KRX/pykrx 데이터 수집
-- [진행 불가] KRX WAF 차단으로 인한 `pykrx` 데이터 수집 단계의 `JSONDecodeError` 발생.
-- [대응] 실시간 파이프라인 통합 테스트 수행 불가. 데이터 수집 제한 해제 후 재시도 예정.
+### BLOCKER: KRX/Naver 데이터 수집
+- [진행 보류] KRX 로그인 및 시장 데이터 수집 접속 이슈.
+- [대응] REAL 환경 통합 검증 중 접속 이슈 발생, 접속 정상화 이후 검증 재개 예정.
 
-## Next Session
-### Next 1. 데이터 수집 정상화 및 검증
-- KRX 접근 제한 해제 확인 후 소량 종목 데이터 수집 테스트.
-- 이후 전체시장 데이터 수집 1회 실행하여 ScreeningEngine 정상 동작 확인.
+## Next Session (2026-09-17, 목요일)
+### Next 1. REAL 통합 검증 재개
+- KRX 접속 정상화 확인 후 1회 통합 사이클 실행.
+- 주요 확인 사항: 데이터 재수집 발생 여부(`price_map` 검증), Claude/Gemini 최종 분석 흐름, Report Generator 최종 생성물.
 
-### Next 2. STEP 3 REAL 통합 테스트 재실행
-- 데이터 수집 정상화 확인 후 파이프라인 전체 실행.
-- 주요 확인 항목: Claude Parser 정상 동작 (`claude_result != None`), Cycle Status 및 Prediction ID 연계 확인.
+### Next 2. Windows Task Scheduler 등록
+- REAL 검증 완료 후 권장 설정(중복 실행 방지)에 따른 실운영 작업 등록.
 
-### Next 3. Report Generator 연결 검증
-- Cycle 성공 시 Prediction ID 기반 Trading Performance 필터링 정상 여부 확인.
 
 
 ## Development Rules
