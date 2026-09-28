@@ -21,6 +21,58 @@ class MultiAIOrchestrator:
         self.tavily_provider = TavilySearchProvider()
         self.db = db_manager
 
+    def _build_search_query(self, ticker: str, name: str, gemini_analysis: dict) -> str:
+        """
+        Gemini 분석 기반 검색어 생성.
+        """
+        keywords = []
+        analysis = gemini_analysis.get("analysis", {})
+        
+        # 분석 키워드 추출
+        if isinstance(analysis, dict):
+            keywords.extend([str(v) for v in analysis.values() if isinstance(v, str)])
+        
+        # Reasoning 키워드 추가
+        reasoning = gemini_analysis.get("reasoning", "")
+        if "실적" in reasoning: keywords.append("실적")
+        if "수급" in reasoning or "외국인" in reasoning or "기관" in reasoning: keywords.append("수급")
+        
+        query_parts = [f"{name} ({ticker})"]
+        query_parts.extend(keywords[:3]) # 최대 3개 키워드 제한
+        query_parts.append("최신 뉴스")
+        
+        return " ".join(query_parts)
+
+    def _filter_news(self, ticker: str, name: str, search_results: List[Any], gemini_analysis: dict) -> List[Any]:
+        """
+        뉴스 관련성 필터링.
+        """
+        if not search_results:
+            return []
+        
+        filtered = []
+        # 분석 키워드셋
+        analysis_keywords = set()
+        analysis = gemini_analysis.get("analysis", {})
+        if isinstance(analysis, dict):
+            for v in analysis.values():
+                if isinstance(v, str): analysis_keywords.update(v.split())
+        
+        for res in search_results:
+            # 기본 점수 활용 및 관련성 로직 적용
+            score = getattr(res, 'score', 0.5)
+            content_lower = (f"{res.title} {getattr(res, 'snippet', '')}").lower()
+            
+            # 종목 관련성
+            is_relevant = ticker.lower() in content_lower or name.lower() in content_lower
+            
+            # 필터링 조건: 점수 > 0.4 또는 종목 관련성 있음
+            if score > 0.4 or is_relevant:
+                filtered.append(res)
+        
+        # 상위 3개 선별
+        return sorted(filtered, key=lambda x: getattr(x, 'score', 0), reverse=True)[:3]
+
     def execute(self, market_data: dict, prediction_id: int) -> dict:
         """
         Legacy execute method for backward compatibility.
@@ -32,12 +84,27 @@ class MultiAIOrchestrator:
         ticker = market_data.get("ticker")
         gemini_analysis = next((a for a in gemini_result.get("analyses", []) if a["ticker"] == ticker), None)
         
-        # Tavily Search
+        # News Search & Filter
         search_results = []
         if gemini_analysis:
-            status, results = self.tavily_provider.search(f"{ticker} 최신 뉴스")
+            ticker = market_data.get("ticker", "N/A")
+            name = market_data.get("name", "N/A")
+            
+            # Query 생성
+            query = self._build_search_query(ticker, name, gemini_analysis)
+            logger.info(f"Tavily Query for {ticker}: {query}")
+            
+            # 검색
+            status, results = self.tavily_provider.search(query, max_results=10)
+            
+            # 필터링
             if status == APIStatus.SUCCESS:
-                search_results.extend(results)
+                search_results = self._filter_news(ticker, name, results, gemini_analysis)
+                logger.info(f"Search candidates: {len(results)}, Passed filter: {len(search_results)}")
+                for i, res in enumerate(search_results):
+                    logger.debug(f"News {i}: {res.title}, Score: {getattr(res, 'score', 'N/A')}")
+            else:
+                logger.warning(f"Tavily search failed for {ticker}")
                 
         # Claude Analysis & Consensus
         return self.execute_single(market_data, gemini_analysis, search_results, prediction_id)

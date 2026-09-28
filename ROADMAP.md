@@ -23,6 +23,7 @@
 - Detailed/Research Report Generator 연결 및 성능 지표 구현 완료.
 - Trading Cycle / Report 연결 검증 완료 (Prediction IDs 필터링).
 - E2E 테스트 및 최종 검증 스크립트(`test_final_verification.py`, `run_real_e2e_diagnostic.py`) 구축 완료.
+- 멀티 AI 오케스트레이터 Tavily 검색 쿼리 최적화 및 뉴스 관련성 필터링(`_build_search_query`, `_filter_news`) 구현 완료.
 - 일 2회 Trading Cycle 실행 구조 정립.
 
 ## Completed
@@ -30,6 +31,10 @@
 - [완료 / 검증 완료] DetailedReportGenerator 성능 지표(Daily/Cumulative Return, MDD) 및 거래 통계 구현.
 - [완료 / 검증 완료] `price_map` 방식 도입을 통한 데이터 재수집 방지 및 효율화.
 - [완료 / 검증 완료] Gemini 명칭 레이블 일괄 변경.
+
+### Multi-AI & Search Optimization
+- [완료 / 검증 완료] Tavily 검색 프로바이더 `max_results` 파라미터 지원 추가.
+- [완료 / 검증 완료] MultiAIOrchestrator 종목/분석 기반 맞춤형 검색 쿼리 생성 및 뉴스 관련성 필터링 로직 구현.
 
 ### Trading Cycle & Verification
 - [완료 / 검증 완료] 시스템 오류 격리 및 포트폴리오 안전성 검증.

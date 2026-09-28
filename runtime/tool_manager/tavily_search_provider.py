@@ -24,13 +24,13 @@ class TavilySearchProvider(SearchProvider):
         else:
             self.client = None
 
-    def search(self, query: str, category: Optional[str] = None) -> tuple[APIStatus, List[SearchResult]]:
+    def search(self, query: str, category: Optional[str] = None, max_results: int = 5) -> tuple[APIStatus, List[SearchResult]]:
         if self.use_mock:
             return APIStatus.SUCCESS, self._get_mock_results(query, category)
         
         try:
             # Tavily 검색 호출 (실제 API 호출)
-            response = self.client.search(query=query, search_depth="advanced")
+            response = self.client.search(query=query, search_depth="advanced", max_results=max_results)
             return APIStatus.SUCCESS, self._normalize_response(response, query, category)
             
         except Exception as e:
