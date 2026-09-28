@@ -17,36 +17,37 @@
 
 # Phase 4 — AI 파이프라인 고도화 및 안정화 [진행 중]
 
-## Current Status
+## Current Status (2026-09-28)
 - Gemini 3.1 Flash-Lite API 연동 성공 (HTTP 200).
 - Claude API 파이프라인 연결 및 JSON Parser 로직 개선 완료.
 - Detailed/Research Report Generator 연결 및 성능 지표 구현 완료.
 - Trading Cycle / Report 연결 검증 완료 (Prediction IDs 필터링).
-- 일 2회 Trading Cycle 실행을 위한 OS Scheduler(Windows Task Scheduler) 설계 완료.
-- Trading Cycle의 오류 격리 및 복구 로직 검증 완료.
+- E2E 테스트 및 최종 검증 스크립트(`test_final_verification.py`, `run_real_e2e_diagnostic.py`) 구축 완료.
+- 일 2회 Trading Cycle 실행 구조 정립.
 
 ## Completed
 ### Reporting & Optimization
 - [완료 / 검증 완료] DetailedReportGenerator 성능 지표(Daily/Cumulative Return, MDD) 및 거래 통계 구현.
-- [완료 / 검증 완료] `price_map` 방식 도입을 통한 데이터 재수집 방지 및 효율화 (Commit: e984373).
-- [완료 / 검증 완료] Gemini 명칭 레이블 일괄 변경 및 오해 소지 제거.
+- [완료 / 검증 완료] `price_map` 방식 도입을 통한 데이터 재수집 방지 및 효율화.
+- [완료 / 검증 완료] Gemini 명칭 레이블 일괄 변경.
 
-### Trading Cycle
-- [완료 / 검증 완료] 시스템 오류 격리(Gemini/Tavily/Claude/Report 장애 처리) 및 포트폴리오 안전성 검증.
-- [완료 / 검증 완료] 일 2회 완전한 Trading Cycle 실행 구조 및 데이터 독립성 확인.
+### Trading Cycle & Verification
+- [완료 / 검증 완료] 시스템 오류 격리 및 포트폴리오 안전성 검증.
+- [완료 / 검증 완료] 최종 E2E 통합 검증 스크립트 구현 및 테스트.
 
 ## Known Issues
 ### BLOCKER: KRX/Naver 데이터 수집
 - [진행 보류] KRX 로그인 및 시장 데이터 수집 접속 이슈.
-- [대응] REAL 환경 통합 검증 중 접속 이슈 발생, 접속 정상화 이후 검증 재개 예정.
+- [대응] REAL 환경 통합 검증 중 접속 이슈 발생, 접속 정상화 이후 최종 통합 검증 재개 예정.
 
-## Next Session (2026-09-17, 목요일)
-### Next 1. REAL 통합 검증 재개
-- KRX 접속 정상화 확인 후 1회 통합 사이클 실행.
-- 주요 확인 사항: 데이터 재수집 발생 여부(`price_map` 검증), Claude/Gemini 최종 분석 흐름, Report Generator 최종 생성물.
+## Future Milestones
+### 1. KRX 연동 안정화 및 Real E2E 검증
+- KRX 접속 정상화 확인 후 최종 실데이터 기반 통합 사이클 검증.
+- 주요 확인 사항: 데이터 재수집 방지(`price_map`), 분석 품질, 최종 Report 생성물.
 
-### Next 2. Windows Task Scheduler 등록
-- REAL 검증 완료 후 권장 설정(중복 실행 방지)에 따른 실운영 작업 등록.
+### 2. 운영 환경 배포
+- 실환경 배포를 위한 Windows Task Scheduler 등록 및 모니터링 체계 구축.
+- 자동 로그 수집 및 장애 알림 설정.
 
 
 
