@@ -52,9 +52,18 @@ class MultiAIOrchestrator:
         except Exception as e:
             logger.error(f"Error executing GeminiAgent.execute_batch: {e}")
             gemini_result = {"analyses": [], "selected_candidates": []}
-            
-        return gemini_result
 
+        # [FIX] Check for consistency between selected_candidates and analyses
+        selected = gemini_result.get("selected_candidates", [])
+        analyses = gemini_result.get("analyses", [])
+        analyzed_tickers = {a["ticker"] for a in analyses if "ticker" in a}
+
+        for candidate in selected:
+            ticker = candidate.get("ticker")
+            if ticker and ticker not in analyzed_tickers:
+                logger.warning(f"Data Mismatch: Candidate {ticker} selected but no analysis found in Gemini output.")
+
+        return gemini_result
     def execute_single(self, market_data: dict, gemini_analysis: dict, search_results: List[Any], prediction_id: int) -> dict:
         """
         이미 분석된 Gemini 결과(single)를 바탕으로 Claude 2차 분석 수행.

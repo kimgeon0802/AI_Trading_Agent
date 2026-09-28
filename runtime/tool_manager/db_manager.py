@@ -164,6 +164,10 @@ class DatabaseManager:
         self.connection.commit()
         return cursor.lastrowid
 
+    def update_prediction(self, prediction_id, prediction):
+        query = "UPDATE predictions SET prediction = ? WHERE id = ?"
+        self.execute_query(query, (prediction, prediction_id))
+
     def get_portfolio(self):
         query = "SELECT cash, total_asset FROM portfolio ORDER BY id DESC LIMIT 1"
         result = self.execute_query(query)

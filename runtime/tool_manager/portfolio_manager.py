@@ -42,6 +42,10 @@ class PortfolioManager:
 
     def execute_decision(self, ticker, decision_data, current_price, prediction_id=None, market_df=None):
         decision = decision_data["decision"]
+        
+        if prediction_id:
+            self.db.update_prediction(prediction_id, decision)
+            
         confidence = decision_data["confidence"]
         timestamp = datetime.now().isoformat()
         

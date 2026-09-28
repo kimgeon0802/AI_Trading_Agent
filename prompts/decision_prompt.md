@@ -27,7 +27,7 @@
 2. Momentum (모멘텀)
 3. Technical Condition (기술적 위치)
 4. Volume / Price Relationship (가격-거래량 관계)
-5. Volatility / Risk (변동성 및 리스크)
+5. Volatility / Risk (제공된 데이터를 기반으로 분석)
 6. Overall Assessment (종합 평가)
 
 ---
