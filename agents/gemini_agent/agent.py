@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from google import genai
@@ -11,6 +12,32 @@ from agents.base_agent import BaseTradingAgent
 load_dotenv()
 
 logger = logging.getLogger("GeminiAgent")
+
+def _log_gemini_output(data: Dict[str, Any]):
+    """
+    Gemini 출력을 별도 로그 파일에 기록 (비차단 방식).
+    """
+    try:
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        log_file = os.path.join(log_dir, "gemini_batch_output.log")
+        
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "analyses_count": len(data.get("analyses", [])),
+            "selected_candidates_count": len(data.get("selected_candidates", [])),
+            "analyses": data.get("analyses", []),
+            "selected_candidates": data.get("selected_candidates", [])
+        }
+        
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+            
+    except Exception as e:
+        # 로그 저장 실패가 파이프라인에 영향을 주지 않도록 경고만 남김
+        logger.warning(f"Failed to log Gemini output: {e}")
 
 class GeminiAgent(BaseTradingAgent):
     def __init__(self, system_prompt_path="prompts/system_prompt.md", decision_prompt_path="prompts/decision_prompt.md"):
@@ -51,10 +78,12 @@ class GeminiAgent(BaseTradingAgent):
 
         # 2. Mock 모드 처리
         if os.getenv("USE_MOCK_AI", "false").lower() == "true":
-            return {
+            result = {
                 "analyses": [self._get_single_analysis_mock(d) for d in market_data_list],
                 "selected_candidates": [{"ticker": d.get("ticker"), "priority": "HIGH", "reason": "Mock reason"} for d in market_data_list[:min(len(market_data_list), 2)]]
             }
+            _log_gemini_output(result)
+            return result
 
         # 3. 실제 API 호출
         try:
@@ -75,6 +104,10 @@ class GeminiAgent(BaseTradingAgent):
             if "analyses" not in data or "selected_candidates" not in data:
                 logger.error("Gemini Batch API output missing required fields: analyses or selected_candidates.")
                 return {"analyses": [], "selected_candidates": []}
+            
+            # 관측성 로그 기록
+            _log_gemini_output(data)
+            
             return data
 
         except Exception as e:
