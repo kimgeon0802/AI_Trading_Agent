@@ -75,6 +75,34 @@ class ClaudeAgent(BaseTradingAgent):
             )
         return "\n\n".join(context_parts)
 
+    def _format_summary(self, snippet: Optional[str]) -> str:
+        """
+        Formats snippet into a concise summary (up to ~450 chars) breaking at sentence boundaries.
+        """
+        if not snippet or not snippet.strip():
+            return "No content summary available."
+        
+        text = " ".join(snippet.strip().split())
+        max_len = 450
+        if len(text) <= max_len:
+            return text
+        
+        truncated = text[:max_len]
+        best_idx = -1
+        for punct in ['. ', '! ', '? ', '.\n', '다. ', '요. ']:
+            idx = truncated.rfind(punct)
+            if idx > best_idx:
+                best_idx = idx + len(punct) - 1
+                
+        if best_idx > 100:
+            return truncated[:best_idx].strip()
+        
+        last_space = truncated.rfind(' ')
+        if last_space > 100:
+            return truncated[:last_space].strip() + "..."
+            
+        return truncated + "..."
+
     def make_decision(self, market_data: dict, gpt_result: dict, search_results: Optional[List] = None) -> dict:
         """
         Analyze the given market data and make a trading decision using Claude API.
@@ -89,19 +117,29 @@ class ClaudeAgent(BaseTradingAgent):
             except Exception as e:
                 logger.error(f"[RAG] Retrieval failed: {e}")
         
-        # Web Search Context 통합
+        # Web Search Context 통합 (STEP 2-2: Title + Summary + URL)
         search_context = ""
         if search_results:
-            search_context = "\n\n[Web Search Results]\n"
-            for res in search_results:
-                search_context += f"- Title: {res.title}, URL: {res.url}\n"
+            search_context = "\n\n[Web Search Results (News & Insights)]\n"
+            for i, res in enumerate(search_results[:3], 1):
+                title = getattr(res, 'title', 'No Title')
+                url = getattr(res, 'url', 'No URL')
+                snippet = getattr(res, 'snippet', None)
+                summary = self._format_summary(snippet)
+                search_context += (
+                    f"\n{i}. Title: {title}\n"
+                    f"   Summary: {summary}\n"
+                    f"   URL: {url}\n"
+                )
+        else:
+            search_context = "\n\n[Web Search Results]\nNo web search results available."
         
         user_prompt = (
             f"Original Market Data: {json.dumps(market_data)}\n\n"
             f"Gemini's Decision: {json.dumps(gpt_result)}\n\n"
             f"{rag_context}\n"
             f"{search_context}\n\n"
-            "Evaluate Gemini's decision, logic, and risk assessment based on market data, Gemini analysis, web search results, and relevant knowledge. "
+            "Evaluate Gemini's decision, logic, and risk assessment based on market data, Gemini analysis, web search results (news titles and summaries), and relevant knowledge. "
             "Return the evaluation in structured JSON format."
         )
 
