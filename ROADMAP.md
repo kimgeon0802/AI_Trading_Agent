@@ -17,44 +17,41 @@
 
 # Phase 4 — AI 파이프라인 고도화 및 안정화 [진행 중]
 
-## Current Status (2026-09-28)
-- Gemini 3.1 Flash-Lite API 연동 성공 (HTTP 200).
-- Claude API 파이프라인 연결 및 JSON Parser 로직 개선 완료.
-- Detailed/Research Report Generator 연결 및 성능 지표 구현 완료.
-- Trading Cycle / Report 연결 검증 완료 (Prediction IDs 필터링).
-- E2E 테스트 및 최종 검증 스크립트(`test_final_verification.py`, `run_real_e2e_diagnostic.py`) 구축 완료.
-- 멀티 AI 오케스트레이터 Tavily 검색 쿼리 최적화 및 뉴스 관련성 필터링(`_build_search_query`, `_filter_news`) 구현 완료.
-- 일 2회 Trading Cycle 실행 구조 정립.
+## Current Status (2026-09-30)
+- Gemini 3.1 Flash-Lite API 연동 및 방어적 JSON 파싱(Markdown 래퍼 처리) 안정화 완료.
+- Tavily 검색 쿼리 최적화 및 뉴스 관련성 필터링 / 중복 제거 (STEP 2-1) 완료.
+- Claude 뉴스 전달 구조 개선 (`Title + Summary + URL`, STEP 2-2) 완료.
+- 개별 REAL API 및 STEP 2 기능/단위/통합 테스트 검증 완료.
 
 ## Completed
-### Reporting & Optimization
-- [완료 / 검증 완료] DetailedReportGenerator 성능 지표(Daily/Cumulative Return, MDD) 및 거래 통계 구현.
-- [완료 / 검증 완료] `price_map` 방식 도입을 통한 데이터 재수집 방지 및 효율화.
-- [완료 / 검증 완료] Gemini 명칭 레이블 일괄 변경.
+### STEP 2-1 — Tavily 뉴스 검색 및 필터링 [완료]
+- [완료 / 검증 완료] Gemini 1차 분석 결과 기반 동적 Tavily Query 생성 (`_build_search_query`: 종목명, 티커, 분석/이유 키워드 활용).
+- [완료 / 검증 완료] Tavily REAL API 검색 (`max_results=10`, `search_depth="advanced"`).
+- [완료 / 검증 완료] `SearchResult` 객체에 `score` 및 `relevance` 매핑 추가.
+- [완료 / 검증 완료] 관련성 필터 (`score > 0.4` 또는 종목명/티커 포함), URL 중복 제거, Title 중복 제거, 최대 3개 뉴스 선별 (`_filter_news`).
 
-### Multi-AI & Search Optimization
-- [완료 / 검증 완료] Tavily 검색 프로바이더 `max_results` 파라미터 지원 추가.
-- [완료 / 검증 완료] MultiAIOrchestrator 종목/분석 기반 맞춤형 검색 쿼리 생성 및 뉴스 관련성 필터링 로직 구현.
+### STEP 2-2 — Tavily 뉴스 → Claude 전달 구조 개선 [완료]
+- [완료 / 검증 완료] 기존 `Title + URL` 전달 구조를 `Title + Summary + URL` 구조로 개선.
+- [완료 / 검증 완료] Tavily `content`(`snippet`) 기반 Summary 정제 (`_format_summary()`, 최대 ~450자, 문장 경계 기준 자연스러운 종료).
+- [완료 / 검증 완료] snippet 없음 및 검색 결과 없음 상황에 대한 안전한 Fallback 처리.
+- [완료 / 검증 완료] 최대 3개 뉴스의 Summary 및 URL을 Claude(`ClaudeAgent.make_decision`) 프롬프트에 전달.
 
-### Trading Cycle & Verification
-- [완료 / 검증 완료] 시스템 오류 격리 및 포트폴리오 안전성 검증.
-- [완료 / 검증 완료] 최종 E2E 통합 검증 스크립트 구현 및 테스트.
+### Gemini REAL JSON Parsing 안정화 [완료]
+- [완료 / 검증 완료] Gemini REAL API 응답에서 Markdown 래퍼(```json ... ```)가 포함될 경우 발생하는 `JSONDecodeError` 방어를 위한 방어적 파싱 로직 구현 (`GeminiAgent.execute_batch`).
+
+### Reporting & Verification
+- [완료 / 검증 완료] 상세/연구 보고서 생성기 및 Prediction Traceability 검증 완료.
+- [완료 / 검증 완료] STEP 2 관련 단위 및 통합 테스트 (`test_step2_1_refinements.py`, `test_step2_2_claude_news.py`, `test_gemini_defensive_parsing.py`) 전체 PASS.
+
+## Next Task
+### STEP 2 REAL E2E Trace Verification
+- **목표**: 2026-09-30 REAL Trading Cycle에서 동일한 Tavily 뉴스 데이터가 `Tavily REAL 결과` → `STEP 2-1 최종 선별` → `STEP 2-2 Summary` → `실제 Claude REAL API payload`까지 데이터 단위로 온전히 연결되었는지 로그/트레이스를 직접 추적 및 검증.
+- **원칙**: 추정치나 Mock 성공을 REAL 성공으로 간주하지 않으며, 실제 로그 기반의 명확한 데이터 연속성 검증 수행.
 
 ## Known Issues
 ### BLOCKER: KRX/Naver 데이터 수집
 - [진행 보류] KRX 로그인 및 시장 데이터 수집 접속 이슈.
 - [대응] REAL 환경 통합 검증 중 접속 이슈 발생, 접속 정상화 이후 최종 통합 검증 재개 예정.
-
-## Future Milestones
-### 1. KRX 연동 안정화 및 Real E2E 검증
-- KRX 접속 정상화 확인 후 최종 실데이터 기반 통합 사이클 검증.
-- 주요 확인 사항: 데이터 재수집 방지(`price_map`), 분석 품질, 최종 Report 생성물.
-
-### 2. 운영 환경 배포
-- 실환경 배포를 위한 Windows Task Scheduler 등록 및 모니터링 체계 구축.
-- 자동 로그 수집 및 장애 알림 설정.
-
-
 
 ## Development Rules
 - **DB 보호**: `data/trading.db`를 임의로 삭제/초기화하지 않음. 데이터 분석 후 최소 수정.
