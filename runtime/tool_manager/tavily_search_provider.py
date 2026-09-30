@@ -44,23 +44,28 @@ class TavilySearchProvider(SearchProvider):
             return results
         
         for item in response["results"]:
-            results.append(SearchResult(
+            score_val = item.get("score")
+            res = SearchResult(
                 query=query,
                 category=category,
                 title=item.get("title"),
                 url=item.get("url"),
                 snippet=item.get("content"),
-                published_at=item.get("published_date")
-            ))
+                published_at=item.get("published_date"),
+                relevance=score_val
+            )
+            res.score = score_val if score_val is not None else 0.5
+            results.append(res)
         return results
 
     def _get_mock_results(self, query: str, category: Optional[str] = None) -> List[SearchResult]:
-        return [
-            SearchResult(
-                query=query,
-                category=category,
-                title=f"Mock Tavily Title for {query}",
-                url="https://tavily.mock.example.com",
-                snippet=f"Mock Tavily content for: {query}"
-            )
-        ]
+        res = SearchResult(
+            query=query,
+            category=category,
+            title=f"Mock Tavily Title for {query}",
+            url="https://tavily.mock.example.com",
+            snippet=f"Mock Tavily content for: {query}",
+            relevance=0.9
+        )
+        res.score = 0.9
+        return [res]

@@ -45,33 +45,64 @@ class MultiAIOrchestrator:
 
     def _filter_news(self, ticker: str, name: str, search_results: List[Any], gemini_analysis: dict) -> List[Any]:
         """
-        뉴스 관련성 필터링.
+        뉴스 관련성 필터링 및 중복 제거.
+        처리 순서:
+        1. 관련성 및 Score 필터
+        2. URL 중복 제거
+        3. Title 중복 제거
+        4. 정렬 (Score/Relevance 및 최신성 기준)
+        5. 최대 3개 선별
         """
         if not search_results:
             return []
         
         filtered = []
-        # 분석 키워드셋
-        analysis_keywords = set()
-        analysis = gemini_analysis.get("analysis", {})
-        if isinstance(analysis, dict):
-            for v in analysis.values():
-                if isinstance(v, str): analysis_keywords.update(v.split())
-        
         for res in search_results:
-            # 기본 점수 활용 및 관련성 로직 적용
-            score = getattr(res, 'score', 0.5)
-            content_lower = (f"{res.title} {getattr(res, 'snippet', '')}").lower()
-            
+            score = getattr(res, 'score', getattr(res, 'relevance', 0.5))
+            if score is None:
+                score = 0.5
+            content_lower = (f"{getattr(res, 'title', '')} {getattr(res, 'snippet', '')}").lower()
+
             # 종목 관련성
             is_relevant = ticker.lower() in content_lower or name.lower() in content_lower
-            
+
             # 필터링 조건: 점수 > 0.4 또는 종목 관련성 있음
             if score > 0.4 or is_relevant:
                 filtered.append(res)
         
-        # 상위 3개 선별
-        return sorted(filtered, key=lambda x: getattr(x, 'score', 0), reverse=True)[:3]
+        # URL 중복 제거 (동일 URL 1개만 유지)
+        seen_urls = set()
+        url_deduped = []
+        for res in filtered:
+            url = getattr(res, 'url', None)
+            if url:
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+            url_deduped.append(res)
+
+        # Title 중복 제거 (동일 Title 1개만 유지)
+        seen_titles = set()
+        title_deduped = []
+        for res in url_deduped:
+            title = getattr(res, 'title', None)
+            if title:
+                if title in seen_titles:
+                    continue
+                seen_titles.add(title)
+            title_deduped.append(res)
+
+        # 정렬: score/relevance 기준 내림차순, published_at 기준 내림차순(최신순) 보조 정렬
+        def sort_key(x):
+            s = getattr(x, 'score', getattr(x, 'relevance', 0))
+            if s is None: s = 0
+            pub = getattr(x, 'published_at', '') or ''
+            return (s, pub)
+
+        sorted_results = sorted(title_deduped, key=sort_key, reverse=True)
+
+        # 최대 3개 선별
+        return sorted_results[:3]
 
     def execute(self, market_data: dict, prediction_id: int) -> dict:
         """
