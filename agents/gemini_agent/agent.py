@@ -99,8 +99,31 @@ class GeminiAgent(BaseTradingAgent):
                 config=config
             )
 
+            # 방어적 JSON 파싱 (순수 JSON 우선 시도, 실패 시 Markdown wrapper 제거 후 재시도)
+            raw_text = response.text.strip()
+            try:
+                data = json.loads(raw_text)
+            except json.JSONDecodeError as jde:
+                cleaned = raw_text
+                if cleaned.startswith("```"):
+                    first_newline = cleaned.find("\n")
+                    if first_newline != -1:
+                        cleaned = cleaned[first_newline + 1:]
+                    else:
+                        cleaned = cleaned[3:]
+                if cleaned.endswith("```"):
+                    cleaned = cleaned[:-3]
+                cleaned = cleaned.strip()
+
+                if cleaned != raw_text:
+                    try:
+                        data = json.loads(cleaned)
+                    except json.JSONDecodeError:
+                        raise jde
+                else:
+                    raise jde
+
             # 파싱 후 스키마 검증
-            data = json.loads(response.text)
             if "analyses" not in data or "selected_candidates" not in data:
                 logger.error("Gemini Batch API output missing required fields: analyses or selected_candidates.")
                 return {"analyses": [], "selected_candidates": []}
